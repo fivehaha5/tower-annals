@@ -1443,11 +1443,13 @@ function portraitLightbox(): string {
   const c = CHAR_MAP[id]
   return `<div class="portrait-lightbox" data-act="dexpreview-close">
     <div class="portrait-lightbox-inner" data-stop="1">
-      <img src="${c.portrait}" alt="${c.name}" />
-      <div class="pli-name">${nameSpan(c.name, c.rarity)}</div>
-      <div class="pli-meta">${ROLE_LABEL[c.role]} · ${c.element} · ${raritySpan(c.rarity)}</div>
-      <div class="pli-desc">${c.desc}</div>
-      <button class="btn primary" data-act="dexpreview-close" style="width:100%;margin-top:12px">關閉</button>
+      <div class="pli-scroll">
+        <img src="${c.portrait}" alt="${c.name}" />
+        <div class="pli-name">${nameSpan(c.name, c.rarity)}</div>
+        <div class="pli-meta">${ROLE_LABEL[c.role]} · ${c.element} · ${raritySpan(c.rarity)}</div>
+        <div class="pli-desc">${c.desc}</div>
+      </div>
+      <button class="btn primary pli-close" data-act="dexpreview-close">關閉</button>
     </div>
   </div>`
 }

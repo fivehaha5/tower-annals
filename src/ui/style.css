@@ -16,7 +16,9 @@
   --priest: #3ecf8e;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  /* 手機瀏覽器用 svh，避免 100%/dvh 不一致造成底欄懸空 */
+  /* JS 會覆寫成 innerHeight；此處作無 JS／桌面後備 */
+  --app-height: 100vh;
+  --app-height: 100dvh;
   --app-height: 100svh;
   font-family: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
   color: var(--text);
@@ -603,40 +605,58 @@ body {
   position: absolute;
   inset: 0;
   z-index: 40;
-  background: rgba(0, 0, 0, 0.88);
+  background: rgba(0, 0, 0, 0.92);
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  padding: 16px;
+  padding: calc(12px + var(--safe-top)) 12px calc(12px + var(--safe-bottom));
 }
 
 .portrait-lightbox-inner {
   width: min(100%, 360px);
-  max-height: 92%;
-  overflow: auto;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   text-align: center;
 }
 
-.portrait-lightbox-inner img {
+.pli-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.portrait-lightbox-inner img,
+.pli-scroll img {
   width: 100%;
-  aspect-ratio: 9 / 16;
+  max-height: min(52svh, 380px);
+  aspect-ratio: 3 / 4;
   object-fit: cover;
   border-radius: 16px;
   border: 1px solid var(--line);
   display: block;
   background: #0a0d14;
+  margin: 0 auto;
 }
 
 .pli-name {
-  margin-top: 12px;
+  margin-top: 10px;
   font-size: 22px;
   font-weight: 800;
 }
 
 .pli-meta {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 13px;
   color: var(--muted);
+}
+
+.pli-close {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-top: 10px;
 }
 
 .pli-desc {
@@ -1116,22 +1136,22 @@ body {
 
 .battle-focus .battle-top {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 112px 1fr;
   gap: 10px;
   align-items: start;
 }
 
 .battle-enemy-pic {
-  width: 72px;
+  width: 112px;
   aspect-ratio: 3 / 4;
   object-fit: cover;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: #0a0d14;
 }
 
 .battle-enemy-pic.placeholder {
-  min-height: 96px;
+  min-height: 148px;
 }
 
 .battle-enemy-meta .enemy-name {
@@ -1139,13 +1159,24 @@ body {
   margin-bottom: 2px;
 }
 
+.battle-focus .team-row.compact-team {
+  margin-top: 12px;
+  gap: 10px;
+}
+
 .compact-team .hero .meta .p {
   display: none;
 }
 
 .compact-team .portrait {
-  width: 44px;
-  height: 44px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+}
+
+.compact-team .hero .meta .n {
+  font-size: 12px;
 }
 
 .floor-pick-grid.compact-picks {
