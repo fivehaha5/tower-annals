@@ -3,6 +3,9 @@ import { assetUrl } from './game/util'
 /** 建置時寫入；與 public/version.json 對齊 */
 export const APP_VERSION = __APP_VERSION__
 
+/** 與 public/sw.js 同一名稱：程式更新時不要清掉立繪本機快取 */
+export const IMAGE_CACHE_NAME = 'tower-annals-images-v1'
+
 const RELOAD_FLAG = 'tower-annals-update-reload'
 const URL_BUST = '_app'
 
@@ -20,11 +23,12 @@ function stripBustParam() {
   }
 }
 
+/** 清掉殼層快取，但保留立繪本機庫 */
 async function clearRuntimeCaches() {
   if (!('caches' in window)) return
   try {
     const keys = await caches.keys()
-    await Promise.all(keys.map((k) => caches.delete(k)))
+    await Promise.all(keys.filter((k) => k !== IMAGE_CACHE_NAME).map((k) => caches.delete(k)))
   } catch {
     /* ignore */
   }
@@ -42,7 +46,7 @@ async function pingServiceWorkers() {
 
 /**
  * 向伺服器拉取 version.json（不快取）。
- * 若與目前 bundle 版本不同 → 清快取並強制換頁一次，讓主畫面捷徑吃到新 HTML。
+ * 若與目前 bundle 版本不同 → 清殼層快取並強制換頁一次（立繪快取保留）。
  */
 export async function checkAppUpdate(opts?: {
   manual?: boolean
@@ -59,7 +63,6 @@ export async function checkAppUpdate(opts?: {
       return 'current'
     }
 
-    // 已為同一遠端版本重載過仍卡住 → 避免無限重整
     if (sessionStorage.getItem(RELOAD_FLAG) === remote) {
       return opts?.manual ? 'blocked' : 'current'
     }
@@ -77,7 +80,44 @@ export async function checkAppUpdate(opts?: {
   }
 }
 
-/** 註冊輕量 SW：導航／version.json 走 network-first，避免卡住舊 index.html */
+/** 把指定圖片 URL 寫入本機 Cache（已有則略過） */
+export async function warmImageCache(urls: string[]): Promise<number> {
+  if (!('caches' in window) || !urls.length) return 0
+  let saved = 0
+  try {
+    const cache = await caches.open(IMAGE_CACHE_NAME)
+    for (const raw of urls) {
+      if (!raw) continue
+      const url = raw.split('?')[0]
+      try {
+        if (await cache.match(url)) continue
+        const res = await fetch(url, { credentials: 'omit', cache: 'force-cache' })
+        if (!res.ok) continue
+        await cache.put(url, res.clone())
+        saved += 1
+      } catch {
+        /* 單張失敗略過 */
+      }
+    }
+  } catch {
+    return saved
+  }
+  return saved
+}
+
+/** 背景預載主視覺＋常用路徑（不阻塞進遊戲） */
+export function scheduleImageWarmup(extraUrls: string[] = []) {
+  const run = () => {
+    void warmImageCache([assetUrl('hero.jpg'), assetUrl('apple-touch-icon.jpg'), ...extraUrls])
+  }
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(run, { timeout: 2500 })
+  } else {
+    window.setTimeout(run, 800)
+  }
+}
+
+/** 註冊 SW：圖片本機快取 + HTML 更新檢查 */
 export function registerUpdateWorker() {
   if (!('serviceWorker' in navigator)) return
   const base = import.meta.env.BASE_URL || '/'
@@ -92,6 +132,7 @@ export function registerUpdateWorker() {
 export function startAutoUpdateChecks() {
   registerUpdateWorker()
   void checkAppUpdate()
+  scheduleImageWarmup()
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void checkAppUpdate()
   })

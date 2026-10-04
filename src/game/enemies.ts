@@ -17,7 +17,7 @@ const NORMAL_NAMES = [
   '霧都催命使',
 ]
 
-const NORMAL_PORTRAITS = [
+export const NORMAL_PORTRAITS = [
   'mob_patrol',
   'mob_rust',
   'mob_echo',
@@ -39,7 +39,7 @@ const MINI_BOSS_NAMES = [
   '熔線督軍',
 ]
 
-const MINI_BOSS_PORTRAITS = [
+export const MINI_BOSS_PORTRAITS = [
   'mob_mini_captain',
   'mob_mini_overseer',
   'mob_mini_centurion',
@@ -47,6 +47,12 @@ const MINI_BOSS_PORTRAITS = [
   'mob_mini_tyrant',
   'mob_molten',
 ]
+
+/** 全部小怪／小首領立繪 URL（本機預載用） */
+export function allMobPortraitUrls(): string[] {
+  const ids = [...new Set([...NORMAL_PORTRAITS, ...MINI_BOSS_PORTRAITS])]
+  return ids.map((id) => portraitPath(id))
+}
 
 export function enemyElement(floor: number): Element {
   const pool: Element[] = ['火', '水', '雷', '光', '暗']

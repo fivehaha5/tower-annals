@@ -17,7 +17,7 @@ import {
   teamPower,
   workBoostMult,
 } from '../game/combat'
-import { enemyTargetPower } from '../game/enemies'
+import { allMobPortraitUrls, enemyTargetPower } from '../game/enemies'
 import {
   GAME_NAME,
   GODKING_UNLOCK,
@@ -87,7 +87,7 @@ import {
 } from '../game/logistics'
 import { RELIC_MAP, RELICS, relicsUnlockedByRebirth } from '../game/data/relics'
 import { countRebirthBonusCells, roleRebirthBonus } from '../game/mechanics'
-import { APP_VERSION, checkAppUpdate } from '../appUpdate'
+import { APP_VERSION, checkAppUpdate, warmImageCache } from '../appUpdate'
 
 const MODE_LABEL: Record<IdleMode, string> = {
   main: '主塔',
@@ -1530,6 +1530,8 @@ function settingsView(_state: GameState): string {
       </div>
       <div class="btn-row" style="margin-top:12px">
         <button class="btn" data-act="checkupdate" style="width:100%">檢查更新</button>
+        <button class="btn" data-act="warmimages" style="width:100%;margin-top:8px">預載立繪到本機</button>
+        <p class="muted" style="margin-top:6px">看過的圖片會自動存本機；也可一次預載全部立繪（約數十 MB）。</p>
       </div>
       <p class="muted" style="margin-top:8px">建置 ${escapeHtml(APP_VERSION)}</p>
     </div>
@@ -2300,6 +2302,20 @@ function bind(root: HTMLElement) {
         if (result === 'current') toast(root, '已是最新版本')
         else if (result === 'blocked') toast(root, '偵測到新版但快取未刷新，請稍後再試或強制重新整理')
         else toast(root, '檢查更新失敗')
+        return
+      }
+      if (act === 'warmimages') {
+        toast(root, '預載立繪中…')
+        const urls = [
+          assetUrl('hero.jpg'),
+          assetUrl('apple-touch-icon.jpg'),
+          ...CHARACTERS.map((c) => c.portrait),
+          ...BOSS_CHARACTERS.map((c) => c.portrait),
+          ...GODKING_CHARACTERS.map((c) => c.portrait),
+          ...allMobPortraitUrls(),
+        ]
+        const n = await warmImageCache(urls)
+        toast(root, n > 0 ? `已寫入本機 ${n} 張新圖` : '立繪已在本機或暫無法寫入')
         return
       }
       saveLocal(actions.getState())
