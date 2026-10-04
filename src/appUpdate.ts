@@ -80,29 +80,57 @@ export async function checkAppUpdate(opts?: {
   }
 }
 
-/** 把指定圖片 URL 寫入本機 Cache（已有則略過） */
-export async function warmImageCache(urls: string[]): Promise<number> {
-  if (!('caches' in window) || !urls.length) return 0
-  let saved = 0
+export type WarmProgress = {
+  done: number
+  total: number
+  saved: number
+  skipped: number
+  failed: number
+}
+
+/** 把指定圖片 URL 寫入本機 Cache（已有則略過）；可回報進度 */
+export async function warmImageCache(
+  urls: string[],
+  onProgress?: (p: WarmProgress) => void,
+): Promise<WarmProgress> {
+  const unique = [...new Set(urls.map((u) => u.split('?')[0]).filter(Boolean))]
+  const total = unique.length
+  const progress: WarmProgress = { done: 0, total, saved: 0, skipped: 0, failed: 0 }
+  const report = () => onProgress?.({ ...progress })
+
+  if (!('caches' in window) || !total) {
+    report()
+    return progress
+  }
+
   try {
     const cache = await caches.open(IMAGE_CACHE_NAME)
-    for (const raw of urls) {
-      if (!raw) continue
-      const url = raw.split('?')[0]
+    report()
+    for (const url of unique) {
       try {
-        if (await cache.match(url)) continue
-        const res = await fetch(url, { credentials: 'omit', cache: 'force-cache' })
-        if (!res.ok) continue
-        await cache.put(url, res.clone())
-        saved += 1
+        if (await cache.match(url)) {
+          progress.skipped += 1
+        } else {
+          const res = await fetch(url, { credentials: 'omit', cache: 'force-cache' })
+          if (!res.ok) {
+            progress.failed += 1
+          } else {
+            await cache.put(url, res.clone())
+            progress.saved += 1
+          }
+        }
       } catch {
-        /* 單張失敗略過 */
+        progress.failed += 1
       }
+      progress.done += 1
+      report()
     }
   } catch {
-    return saved
+    progress.failed += total - progress.done
+    progress.done = total
+    report()
   }
-  return saved
+  return progress
 }
 
 /** 背景預載主視覺＋常用路徑（不阻塞進遊戲） */

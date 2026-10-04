@@ -225,7 +225,7 @@ function patchLiveHud(root: HTMLElement, state: GameState) {
   if (logEl) logEl.textContent = b.log || '準備戰鬥…'
 }
 
-function toast(app: HTMLElement, msg: string) {
+function toast(app: HTMLElement, msg: string, holdMs = 1800) {
   let el = app.querySelector('.toast') as HTMLElement | null
   if (!el) {
     el = document.createElement('div')
@@ -235,9 +235,34 @@ function toast(app: HTMLElement, msg: string) {
   el.textContent = msg
   el.style.display = 'block'
   window.clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => {
-    el.style.display = 'none'
-  }, 1800)
+  if (holdMs > 0) {
+    toastTimer = window.setTimeout(() => {
+      el.style.display = 'none'
+    }, holdMs)
+  }
+}
+
+let warmingImages = false
+
+function updateWarmProgressUi(
+  root: HTMLElement,
+  p: { done: number; total: number; saved: number; skipped: number; failed: number },
+  doneMsg?: string,
+) {
+  const box = root.querySelector('#warm-progress') as HTMLElement | null
+  const bar = root.querySelector('[data-warm-bar]') as HTMLElement | null
+  const text = root.querySelector('[data-warm-text]') as HTMLElement | null
+  if (!box || !bar || !text) return
+  box.hidden = false
+  const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0
+  bar.style.width = `${pct}%`
+  if (doneMsg) {
+    text.textContent = doneMsg
+    return
+  }
+  text.textContent = `預載中 ${p.done}/${p.total}（${pct}%）· 新下載 ${p.saved} · 已有 ${p.skipped}${
+    p.failed ? ` · 失敗 ${p.failed}` : ''
+  }`
 }
 
 function pctNum(cur: number, max: number): number {
@@ -1532,6 +1557,10 @@ function settingsView(_state: GameState): string {
         <button class="btn" data-act="checkupdate" style="width:100%">檢查更新</button>
         <button class="btn" data-act="warmimages" style="width:100%;margin-top:8px">預載立繪到本機</button>
         <p class="muted" style="margin-top:6px">看過的圖片會自動存本機；也可一次預載全部立繪（約數十 MB）。</p>
+        <div id="warm-progress" class="warm-progress" hidden>
+          <div class="warm-progress-bar"><i data-warm-bar></i></div>
+          <div class="warm-progress-text muted" data-warm-text>待機</div>
+        </div>
       </div>
       <p class="muted" style="margin-top:8px">建置 ${escapeHtml(APP_VERSION)}</p>
     </div>
@@ -2305,7 +2334,17 @@ function bind(root: HTMLElement) {
         return
       }
       if (act === 'warmimages') {
-        toast(root, '預載立繪中…')
+        if (warmingImages) {
+          toast(root, '預載進行中…')
+          return
+        }
+        if (!('caches' in window)) {
+          toast(root, '此瀏覽器不支援本機圖片快取')
+          return
+        }
+        warmingImages = true
+        const btn = el as HTMLButtonElement
+        btn.disabled = true
         const urls = [
           assetUrl('hero.jpg'),
           assetUrl('apple-touch-icon.jpg'),
@@ -2314,8 +2353,22 @@ function bind(root: HTMLElement) {
           ...GODKING_CHARACTERS.map((c) => c.portrait),
           ...allMobPortraitUrls(),
         ]
-        const n = await warmImageCache(urls)
-        toast(root, n > 0 ? `已寫入本機 ${n} 張新圖` : '立繪已在本機或暫無法寫入')
+        updateWarmProgressUi(root, { done: 0, total: urls.length, saved: 0, skipped: 0, failed: 0 })
+        toast(root, '開始預載立繪…', 0)
+        try {
+          const result = await warmImageCache(urls, (p) => {
+            updateWarmProgressUi(root, p)
+            toast(root, `預載 ${p.done}/${p.total}（${Math.round((p.done / Math.max(1, p.total)) * 100)}%）`, 0)
+          })
+          const summary = `完成 ${result.done}/${result.total} · 新下載 ${result.saved} · 已有 ${result.skipped}${
+            result.failed ? ` · 失敗 ${result.failed}` : ''
+          }`
+          updateWarmProgressUi(root, result, summary)
+          toast(root, summary, 3200)
+        } finally {
+          warmingImages = false
+          btn.disabled = false
+        }
         return
       }
       saveLocal(actions.getState())
