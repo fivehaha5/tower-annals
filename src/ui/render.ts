@@ -168,6 +168,27 @@ function isEditingField(root: HTMLElement): boolean {
   return !!el.isContentEditable
 }
 
+/** 爬塔需整頁重繪的簽名（敵人／層數／掉落文案變了才重繪，避免每秒拆掉 img） */
+let lastTowerPaintSig = ''
+
+function towerPaintSig(state: GameState): string {
+  const b = state.battle
+  const mode = state.idleMode
+  const ds = mode === 'boss' || mode === 'godking' ? state.dropSettings[mode] : null
+  return [
+    mode,
+    farmFloorOf(state),
+    state.floors[mode],
+    b?.enemy.name ?? '',
+    b?.enemy.portrait ?? '',
+    state.lastLootMsg ?? '',
+    ds?.aim ?? '',
+    ds?.targetId ?? '',
+    state.firstWin.boss ? '1' : '0',
+    state.firstWin.godking ? '1' : '0',
+  ].join('|')
+}
+
 function patchLiveHud(root: HTMLElement, state: GameState) {
   const keys = RESOURCE_META.map((m) => m.key)
   const vals = root.querySelectorAll('.topbar .res .val')
@@ -200,9 +221,8 @@ function patchLiveHud(root: HTMLElement, state: GameState) {
       })
     })
   }
-  const log = root.querySelector('.panel .muted')
-  // best-effort: enemy log is first muted under enemy-name; skip fragile text patches
-  void log
+  const logEl = root.querySelector('[data-battle-log]') as HTMLElement | null
+  if (logEl) logEl.textContent = b.log || '準備戰鬥…'
 }
 
 function toast(app: HTMLElement, msg: string) {
@@ -405,7 +425,7 @@ function towerView(state: GameState): string {
             }
             const def = CHAR_MAP[ch.defId]
             return `<div class="hero">
-              <img class="portrait ${role}" src="${def.portrait}" alt="${def.name}" />
+              <img class="portrait ${role}" src="${def.portrait}" alt="${def.name}" loading="lazy" decoding="async" />
               <div class="meta">
                 <div class="n">${nameSpan(def.name, ch.rarity)}</div>
               </div>
@@ -450,7 +470,7 @@ function towerView(state: GameState): string {
       <div class="boss-stage-meta">
         <div class="enemy-name">${enemyName}</div>
         <div class="muted">${b?.enemy.element ?? '-'} · 戰力 ${formatNum(b?.enemy.power ?? 0)} · ${formatNum(floor)}/${formatNum(maxFloor)}F</div>
-        <div class="muted">${b?.log ?? '準備戰鬥…'}</div>
+        <div class="muted" data-battle-log>${b?.log ?? '準備戰鬥…'}</div>
         <div class="bar shield" data-bar="enemy-shield" data-pct="${pctNum(b?.enemy.shield ?? 0, b?.enemy.maxShield ?? 1).toFixed(1)}"><i></i></div>
         <div class="bar enemy" data-bar="enemy-hp" data-pct="${pctNum(b?.enemy.hp ?? 0, b?.enemy.maxHp ?? 1).toFixed(1)}"><i></i></div>
       </div>
@@ -462,13 +482,13 @@ function towerView(state: GameState): string {
       <div class="battle-top">
         ${
           b?.enemy.portrait
-            ? `<img class="battle-enemy-pic" src="${b.enemy.portrait}" alt="" />`
+            ? `<img class="battle-enemy-pic" src="${b.enemy.portrait}" alt="" loading="lazy" decoding="async" />`
             : '<div class="battle-enemy-pic placeholder"></div>'
         }
         <div class="battle-enemy-meta">
           <div class="enemy-name">${enemyName}</div>
           <div class="muted">${b?.enemy.element ?? '-'} · 戰力 ${formatNum(b?.enemy.power ?? 0)} · ${formatNum(floor)}/${formatNum(maxFloor)}F</div>
-          <div class="muted">${b?.log ?? '準備戰鬥…'}</div>
+          <div class="muted" data-battle-log>${b?.log ?? '準備戰鬥…'}</div>
           <div class="bar shield" data-bar="enemy-shield" data-pct="${pctNum(b?.enemy.shield ?? 0, b?.enemy.maxShield ?? 1).toFixed(1)}"><i></i></div>
           <div class="bar enemy" data-bar="enemy-hp" data-pct="${pctNum(b?.enemy.hp ?? 0, b?.enemy.maxHp ?? 1).toFixed(1)}"><i></i></div>
         </div>
@@ -1745,18 +1765,17 @@ export function render(root: HTMLElement, kind: 'tick' | 'ui' = 'ui') {
     actions.clearPendingToast()
   }
 
-  // 掛機 tick 時若正在輸入，避免整頁重繪把焦點與內容清掉
-  if (kind === 'tick' && isEditingField(root)) {
-    patchLiveHud(root, state)
-    flushToast()
-    return
-  }
-
-  // 非爬塔頁的 tick：只更新頂欄資源，其餘不必每秒重繪
-  if (kind === 'tick' && state.tab !== 'tower') {
-    patchLiveHud(root, state)
-    flushToast()
-    return
+  // 掛機 tick：盡量局部更新，避免每秒 innerHTML 拆掉立繪 img 重抓圖
+  if (kind === 'tick') {
+    const towerSig = state.tab === 'tower' ? towerPaintSig(state) : ''
+    const towerUnchanged = state.tab !== 'tower' || towerSig === lastTowerPaintSig
+    if (isEditingField(root) || towerUnchanged || state.tab !== 'tower') {
+      if (state.tab === 'tower' && towerSig) lastTowerPaintSig = towerSig
+      patchLiveHud(root, state)
+      flushToast()
+      return
+    }
+    lastTowerPaintSig = towerSig
   }
 
   const prevContent = root.querySelector('.content') as HTMLElement | null
@@ -1814,6 +1833,7 @@ export function render(root: HTMLElement, kind: 'tick' | 'ui' = 'ui') {
 
   const tabChanged = prevTab !== null && prevTab !== state.tab
   prevTab = state.tab
+  if (state.tab === 'tower') lastTowerPaintSig = towerPaintSig(state)
 
   root.innerHTML = `<div class="phone">
     ${topbar(state)}
