@@ -177,6 +177,9 @@ export function createBattle(state: GameState): BattleSnapshot {
     log: '掛機戰鬥中…',
     winning: teamPower(state) >= enemy.power * 0.85,
     chargeShield: 0,
+    actIndex: 0,
+    roundDmgToEnemy: 0,
+    floaters: [],
   }
 }
 
@@ -206,6 +209,10 @@ function hasEffect(skillId: string, id: string): number {
   return eff ? (eff.value ?? 1) : 0
 }
 
+/**
+ * 戰鬥節拍：每 tick 僅一名隊員依陣型左→右出手；三人皆出手後敵方攻擊一次。
+ * （舊版為三職+敵同 tick，現改為可讀的序貫出手；清關節奏約變慢為每輪 4 tick。）
+ */
 export function battleTick(state: GameState): {
   cleared: boolean
   resources: Partial<Resources>
@@ -218,221 +225,26 @@ export function battleTick(state: GameState): {
   const teamEntries = getTeamRoles(state)
   if (teamEntries.length === 0) {
     b.log = '尚未編成隊伍'
+    b.floaters = []
     return { cleared: false, resources: {}, loot: {}, lootCost: emptyLootCost() }
   }
 
-  const castOrder = state.skillCastOrder?.length
-    ? state.skillCastOrder
-    : defaultSkillCastOrder()
-  let dealt = 0
-  let healed = 0
-  let shielded = 0
-  let trueDealt = 0
-  let overhealRatio = 0
-  let antiHeal = false
-  let fogBreak = false
-  let darkAmp = 0
-  let shieldLeech = 0
-  let pierce = 0
-  let mirror = 0
-  const roleDmg: Record<Role, number> = { warrior: 0, mage: 0, priest: 0 }
-  const roleHeal: Record<Role, number> = { warrior: 0, mage: 0, priest: 0 }
-  const roleShield: Record<Role, number> = { warrior: 0, mage: 0, priest: 0 }
+  const partyN = teamEntries.length
+  const cycle = partyN + 1 // 最後一步為敵方
+  let act = b.actIndex ?? 0
+  if (act < 0 || act >= cycle) act = 0
+  b.floaters = []
 
-  for (const { role, ch } of teamEntries) {
-    const stats = calcCharStats(state, ch)
-    const relic = relicEffects(state, role)
-    const skillPow = 1 + (relic?.skillPower ?? 0)
-    if (relic?.overhealToShield) overhealRatio = Math.max(overhealRatio, relic.overhealToShield)
-    if (relic?.trueDamageBonus) {
-      const td = stats.atk * relic.trueDamageBonus * 0.3
-      trueDealt += td
-      roleDmg[role] += td
-    }
-    if (relic?.heal) {
-      const rh = stats.atk * 0.05 * relic.heal
-      healed += rh
-      roleHeal[role] += rh
-    }
-
-    for (const kind of castOrder) {
-      const owned = getEquippedSkill(state, role, kind)
-      const skill = owned ? SKILL_MAP[owned.skillId] : undefined
-      if (!skill) continue
-      const str = skillStrength(owned) * skillPow
-      let mult = elementMult(skill.element as Element, b.enemy.element)
-      if (hasEffect(skill.id, 'fogBreak')) fogBreak = true
-      if (hasEffect(skill.id, 'trueDamage')) {
-        const tv = hasEffect(skill.id, 'trueDamage')
-        const td = stats.atk * skill.power * str * tv
-        trueDealt += td
-        roleDmg[role] += td
-        mult = 1
-      }
-      if (b.enemy.mechanic === 'fogLayer' && skill.element !== '水' && !fogBreak) {
-        mult *= 0.65
-      }
-      if (hasEffect(skill.id, 'darkAmp') && skill.element === '暗') {
-        darkAmp = Math.max(darkAmp, hasEffect(skill.id, 'darkAmp'))
-        mult *= 1 + darkAmp
-      }
-      const dmgPart = stats.atk * skill.power * str * mult * (kind === 'attack' ? 1 : 0.55)
-      dealt += dmgPart
-      roleDmg[role] += dmgPart
-      let h = stats.atk * skill.healPower * str
-      if (relic?.heal) h *= 1 + relic.heal
-      if (hasEffect(skill.id, 'balanceHeal') && b.teamHp < b.teamMaxHp * 0.5) {
-        h *= 1 + hasEffect(skill.id, 'balanceHeal')
-      }
-      healed += h
-      roleHeal[role] += h
-      const shPart =
-        stats.shield * 0.04 * skill.shieldPower * str +
-        stats.atk * skill.shieldPower * 0.12 * str +
-        (kind === 'defense' ? stats.def * 0.35 * str : 0)
-      shielded += shPart
-      roleShield[role] += shPart
-      const cs = hasEffect(skill.id, 'chargeShield')
-      if (cs) b.chargeShield = (b.chargeShield ?? 0) + Math.floor(cs)
-      if (hasEffect(skill.id, 'overhealToShield')) {
-        overhealRatio = Math.max(overhealRatio, hasEffect(skill.id, 'overhealToShield'))
-      }
-      if (hasEffect(skill.id, 'antiHealCut')) antiHeal = true
-      if (hasEffect(skill.id, 'pierceShield')) {
-        pierce = Math.max(pierce, hasEffect(skill.id, 'pierceShield'))
-      }
-      if (hasEffect(skill.id, 'shieldLeech')) {
-        shieldLeech = Math.max(shieldLeech, hasEffect(skill.id, 'shieldLeech'))
-      }
-      if (hasEffect(skill.id, 'mirrorCast')) mirror = Math.max(mirror, hasEffect(skill.id, 'mirrorCast'))
-      if (hasEffect(skill.id, 'gateBreak') && b.enemy.gateCharges) {
-        b.enemy.gateCharges = Math.max(0, (b.enemy.gateCharges ?? 0) - 1)
-      }
-    }
+  if (act < partyN) {
+    resolvePartyAction(state, b, teamEntries[act]!)
+  } else {
+    resolveEnemyAction(state, b, teamEntries)
   }
 
-  if (mirror > 0) {
-    const m = 1 + mirror * 0.35
-    dealt *= m
-    healed *= m
-    shielded *= m
-    for (const role of ROLES) {
-      roleDmg[role] *= m
-      roleHeal[role] *= m
-      roleShield[role] *= m
-    }
-  }
+  b.actIndex = (act + 1) % cycle
+  if (b.actIndex === 0) b.roundDmgToEnemy = 0
 
-  // Boss 機制：編譯錯位
-  if (b.enemy.mechanic === 'compileShift') {
-    const pool: Element[] = ['火', '水', '雷', '光', '暗']
-    b.enemy.element = pool[Math.floor(Math.random() * pool.length)]
-  }
-
-  let enemyDefFactor = 1 + b.enemy.atk * 0.0016
-  if (b.enemy.mechanic === 'stoneSkin') enemyDefFactor *= 1.15
-  if (b.enemy.mechanic === 'mountainSpine') enemyDefFactor *= 1.25
-
-  let dmgToEnemy = Math.floor(dealt / enemyDefFactor) + Math.floor(trueDealt)
-  if (b.enemy.mechanic === 'gateBlock' && (b.enemy.gateCharges ?? 0) > 0) {
-    b.enemy.gateCharges! -= 1
-    dmgToEnemy = 0
-  }
-  if (b.enemy.mechanic === 'pureLaw') dmgToEnemy = Math.floor(dmgToEnemy * 0.88)
-
-  const er = applyDamage(b.enemy.hp, b.enemy.shield, dmgToEnemy, pierce)
-  b.enemy.hp = er.hp
-  b.enemy.shield = er.shield
-
-  if (b.enemy.mechanic === 'goldLeech' && !antiHeal && dmgToEnemy > 0) {
-    b.enemy.hp = Math.min(b.enemy.maxHp, b.enemy.hp + Math.floor(dmgToEnemy * 0.08))
-  }
-  if (b.enemy.mechanic === 'dreamHeal') {
-    b.enemy.hp = Math.min(b.enemy.maxHp, b.enemy.hp + Math.floor(b.enemy.maxHp * 0.01))
-  }
-  if (b.enemy.mechanic === 'venomHeart') {
-    // 毒反噬：小幅扣我方（下面 incoming 已算）
-  }
-
-  let healAmt = Math.floor(healed)
-  if (b.enemy.mechanic === 'eternalNight') healAmt = Math.floor(healAmt * 0.5)
-  const beforeHp = b.teamHp
-  b.teamHp = Math.min(b.teamMaxHp, b.teamHp + healAmt)
-  const overflow = healAmt - (b.teamHp - beforeHp)
-  let shAdd = Math.floor(shielded)
-  if (overflow > 0 && overhealRatio > 0) shAdd += Math.floor(overflow * overhealRatio)
-  if (shieldLeech > 0 && dmgToEnemy > 0) shAdd += Math.floor(dmgToEnemy * shieldLeech)
-  b.teamShield = Math.min(b.teamMaxShield * 1.5, b.teamShield + shAdd)
-
-  if (b.enemy.mechanic === 'lawCrush') {
-    b.teamShield = Math.max(0, b.teamShield - Math.floor(b.teamMaxShield * 0.04))
-  }
-
-  const captainRole = state.captainRole ?? 'warrior'
-  const captain =
-    getRoleCharacter(state, captainRole) ?? teamEntries[0]?.ch
-  const captainEl = captain ? CHAR_MAP[captain.defId].element : '光'
-  let enemyAtk = b.enemy.atk
-  if (b.enemy.mechanic === 'ramCharge') enemyAtk = Math.floor(enemyAtk * 1.2)
-  if (b.enemy.mechanic === 'solarBurn') enemyAtk = Math.floor(enemyAtk * 1.1)
-  let enemyMult = elementMult(b.enemy.element, captainEl)
-  if (b.enemy.mechanic === 'aquaField') enemyMult *= 1.1
-  let incoming = Math.floor(enemyAtk * enemyMult * (0.85 + Math.random() * 0.3))
-  if (b.enemy.mechanic === 'tideShell' && b.enemy.shield > b.enemy.maxShield * 0.4) {
-    // 敵方減傷已在 defFactor；此處略增敵壓
-    incoming = Math.floor(incoming * 1.05)
-  }
-  if (b.enemy.mechanic === 'scaleJudgment') {
-    const ratio = b.teamHp / Math.max(1, b.teamMaxHp)
-    if (ratio < 0.4) incoming = Math.floor(incoming * 1.15)
-  }
-  if (b.enemy.mechanic === 'starPierce') {
-    // 部分無視護盾
-    const pierceIn = Math.floor(incoming * 0.2)
-    b.teamHp = Math.max(0, b.teamHp - pierceIn)
-    incoming -= pierceIn
-  }
-  if (b.enemy.mechanic === 'mirrorTwin' && dmgToEnemy > 0) {
-    incoming += Math.floor(dmgToEnemy * 0.12)
-  }
-  if (b.enemy.mechanic === 'venomHeart') {
-    incoming += Math.floor(b.teamMaxHp * 0.008)
-  }
-
-  // 次數盾
-  if ((b.chargeShield ?? 0) > 0 && incoming > 0) {
-    b.chargeShield! -= 1
-    incoming = Math.floor(incoming * 0.15)
-  }
-
-  const mitigated = Math.floor(incoming * (100 / (100 + teamTotals(state).def * 0.15)))
-  const tr = applyDamage(b.teamHp, b.teamShield, mitigated)
-  b.teamHp = tr.hp
-  b.teamShield = tr.shield
-  b.log = `造成 ${dmgToEnemy} 傷害 · 受到 ${mitigated} 傷害`
   b.winning = b.teamHp > 0 && teamPower(state) >= b.enemy.power * 0.7
-
-  // 各職出手飄字（依本 tick 貢獻比例對齊最終數值）
-  const floaters: BattleFloater[] = []
-  const rawDmgTotal = ROLES.reduce((s, r) => s + roleDmg[r], 0)
-  const rawHealTotal = ROLES.reduce((s, r) => s + roleHeal[r], 0)
-  const rawShieldTotal = ROLES.reduce((s, r) => s + roleShield[r], 0)
-  for (const role of ROLES) {
-    if (rawDmgTotal > 0 && roleDmg[role] > 0 && dmgToEnemy > 0) {
-      const n = Math.max(1, Math.floor((dmgToEnemy * roleDmg[role]) / rawDmgTotal))
-      floaters.push({ role, text: `${ROLE_LABEL[role]} -${n}`, kind: 'dmg' })
-    }
-    if (rawHealTotal > 0 && roleHeal[role] > 0 && healAmt > 0) {
-      const n = Math.max(1, Math.floor((healAmt * roleHeal[role]) / rawHealTotal))
-      floaters.push({ role, text: `${ROLE_LABEL[role]} +${n}`, kind: 'heal' })
-    }
-    if (rawShieldTotal > 0 && roleShield[role] > 0 && shAdd > 0) {
-      const n = Math.max(1, Math.floor((shAdd * roleShield[role]) / rawShieldTotal))
-      floaters.push({ role, text: `${ROLE_LABEL[role]} 盾+${n}`, kind: 'shield' })
-    }
-  }
-  b.floaters = floaters
-  if (floaters.length > 0) b.floaterSeq = (b.floaterSeq ?? 0) + 1
 
   if (b.enemy.hp <= 0) {
     const resources = clearRewards(state)
@@ -459,6 +271,206 @@ export function battleTick(state: GameState): {
   }
 
   return { cleared: false, resources: {}, loot: {}, lootCost: emptyLootCost() }
+}
+
+function resolvePartyAction(
+  state: GameState,
+  b: BattleSnapshot,
+  entry: { role: Role; ch: OwnedCharacter },
+) {
+  const { role, ch } = entry
+  const castOrder = state.skillCastOrder?.length
+    ? state.skillCastOrder
+    : defaultSkillCastOrder()
+
+  let dealt = 0
+  let healed = 0
+  let shielded = 0
+  let trueDealt = 0
+  let overhealRatio = 0
+  let antiHeal = false
+  let fogBreak = false
+  let darkAmp = 0
+  let shieldLeech = 0
+  let pierce = 0
+  let mirror = 0
+
+  const stats = calcCharStats(state, ch)
+  const relic = relicEffects(state, role)
+  const skillPow = 1 + (relic?.skillPower ?? 0)
+  if (relic?.overhealToShield) overhealRatio = Math.max(overhealRatio, relic.overhealToShield)
+  if (relic?.trueDamageBonus) {
+    trueDealt += stats.atk * relic.trueDamageBonus * 0.3
+  }
+  if (relic?.heal) {
+    healed += stats.atk * 0.05 * relic.heal
+  }
+
+  for (const kind of castOrder) {
+    const owned = getEquippedSkill(state, role, kind)
+    const skill = owned ? SKILL_MAP[owned.skillId] : undefined
+    if (!skill) continue
+    const str = skillStrength(owned) * skillPow
+    let mult = elementMult(skill.element as Element, b.enemy.element)
+    if (hasEffect(skill.id, 'fogBreak')) fogBreak = true
+    if (hasEffect(skill.id, 'trueDamage')) {
+      const tv = hasEffect(skill.id, 'trueDamage')
+      trueDealt += stats.atk * skill.power * str * tv
+      mult = 1
+    }
+    if (b.enemy.mechanic === 'fogLayer' && skill.element !== '水' && !fogBreak) {
+      mult *= 0.65
+    }
+    if (hasEffect(skill.id, 'darkAmp') && skill.element === '暗') {
+      darkAmp = Math.max(darkAmp, hasEffect(skill.id, 'darkAmp'))
+      mult *= 1 + darkAmp
+    }
+    dealt += stats.atk * skill.power * str * mult * (kind === 'attack' ? 1 : 0.55)
+    let h = stats.atk * skill.healPower * str
+    if (relic?.heal) h *= 1 + relic.heal
+    if (hasEffect(skill.id, 'balanceHeal') && b.teamHp < b.teamMaxHp * 0.5) {
+      h *= 1 + hasEffect(skill.id, 'balanceHeal')
+    }
+    healed += h
+    shielded +=
+      stats.shield * 0.04 * skill.shieldPower * str +
+      stats.atk * skill.shieldPower * 0.12 * str +
+      (kind === 'defense' ? stats.def * 0.35 * str : 0)
+    const cs = hasEffect(skill.id, 'chargeShield')
+    if (cs) b.chargeShield = (b.chargeShield ?? 0) + Math.floor(cs)
+    if (hasEffect(skill.id, 'overhealToShield')) {
+      overhealRatio = Math.max(overhealRatio, hasEffect(skill.id, 'overhealToShield'))
+    }
+    if (hasEffect(skill.id, 'antiHealCut')) antiHeal = true
+    if (hasEffect(skill.id, 'pierceShield')) {
+      pierce = Math.max(pierce, hasEffect(skill.id, 'pierceShield'))
+    }
+    if (hasEffect(skill.id, 'shieldLeech')) {
+      shieldLeech = Math.max(shieldLeech, hasEffect(skill.id, 'shieldLeech'))
+    }
+    if (hasEffect(skill.id, 'mirrorCast')) mirror = Math.max(mirror, hasEffect(skill.id, 'mirrorCast'))
+    if (hasEffect(skill.id, 'gateBreak') && b.enemy.gateCharges) {
+      b.enemy.gateCharges = Math.max(0, (b.enemy.gateCharges ?? 0) - 1)
+    }
+  }
+
+  if (mirror > 0) {
+    const m = 1 + mirror * 0.35
+    dealt *= m
+    healed *= m
+    shielded *= m
+    trueDealt *= m
+  }
+
+  let enemyDefFactor = 1 + b.enemy.atk * 0.0016
+  if (b.enemy.mechanic === 'stoneSkin') enemyDefFactor *= 1.15
+  if (b.enemy.mechanic === 'mountainSpine') enemyDefFactor *= 1.25
+
+  let dmgToEnemy = Math.floor(dealt / enemyDefFactor) + Math.floor(trueDealt)
+  if (b.enemy.mechanic === 'gateBlock' && (b.enemy.gateCharges ?? 0) > 0) {
+    b.enemy.gateCharges! -= 1
+    dmgToEnemy = 0
+  }
+  if (b.enemy.mechanic === 'pureLaw') dmgToEnemy = Math.floor(dmgToEnemy * 0.88)
+
+  const er = applyDamage(b.enemy.hp, b.enemy.shield, dmgToEnemy, pierce)
+  b.enemy.hp = er.hp
+  b.enemy.shield = er.shield
+  b.roundDmgToEnemy = (b.roundDmgToEnemy ?? 0) + dmgToEnemy
+
+  if (b.enemy.mechanic === 'goldLeech' && !antiHeal && dmgToEnemy > 0) {
+    b.enemy.hp = Math.min(b.enemy.maxHp, b.enemy.hp + Math.floor(dmgToEnemy * 0.08))
+  }
+
+  let healAmt = Math.floor(healed)
+  if (b.enemy.mechanic === 'eternalNight') healAmt = Math.floor(healAmt * 0.5)
+  const beforeHp = b.teamHp
+  b.teamHp = Math.min(b.teamMaxHp, b.teamHp + healAmt)
+  const overflow = healAmt - (b.teamHp - beforeHp)
+  let shAdd = Math.floor(shielded)
+  if (overflow > 0 && overhealRatio > 0) shAdd += Math.floor(overflow * overhealRatio)
+  if (shieldLeech > 0 && dmgToEnemy > 0) shAdd += Math.floor(dmgToEnemy * shieldLeech)
+  b.teamShield = Math.min(b.teamMaxShield * 1.5, b.teamShield + shAdd)
+
+  const floaters: BattleFloater[] = []
+  if (dmgToEnemy > 0) {
+    floaters.push({ role, text: `${ROLE_LABEL[role]} -${dmgToEnemy}`, kind: 'dmg' })
+  }
+  if (healAmt > 0) {
+    floaters.push({ role, text: `${ROLE_LABEL[role]} +${healAmt}`, kind: 'heal' })
+  }
+  if (shAdd > 0) {
+    floaters.push({ role, text: `${ROLE_LABEL[role]} 盾+${shAdd}`, kind: 'shield' })
+  }
+  b.floaters = floaters
+  if (floaters.length > 0) b.floaterSeq = (b.floaterSeq ?? 0) + 1
+
+  const bits: string[] = [`${ROLE_LABEL[role]}出手`]
+  if (dmgToEnemy > 0) bits.push(`造成 ${dmgToEnemy}`)
+  if (healAmt > 0) bits.push(`治療 ${healAmt}`)
+  if (shAdd > 0) bits.push(`護盾 +${shAdd}`)
+  b.log = bits.join(' · ')
+}
+
+function resolveEnemyAction(
+  state: GameState,
+  b: BattleSnapshot,
+  teamEntries: { role: Role; ch: OwnedCharacter }[],
+) {
+  // Boss 機制：編譯錯位（每輪敵方回合改屬性）
+  if (b.enemy.mechanic === 'compileShift') {
+    const pool: Element[] = ['火', '水', '雷', '光', '暗']
+    b.enemy.element = pool[Math.floor(Math.random() * pool.length)]
+  }
+
+  if (b.enemy.mechanic === 'dreamHeal') {
+    b.enemy.hp = Math.min(b.enemy.maxHp, b.enemy.hp + Math.floor(b.enemy.maxHp * 0.01))
+  }
+
+  if (b.enemy.mechanic === 'lawCrush') {
+    b.teamShield = Math.max(0, b.teamShield - Math.floor(b.teamMaxShield * 0.04))
+  }
+
+  const captainRole = state.captainRole ?? 'warrior'
+  const captain = getRoleCharacter(state, captainRole) ?? teamEntries[0]?.ch
+  const captainEl = captain ? CHAR_MAP[captain.defId].element : '光'
+  let enemyAtk = b.enemy.atk
+  if (b.enemy.mechanic === 'ramCharge') enemyAtk = Math.floor(enemyAtk * 1.2)
+  if (b.enemy.mechanic === 'solarBurn') enemyAtk = Math.floor(enemyAtk * 1.1)
+  let enemyMult = elementMult(b.enemy.element, captainEl)
+  if (b.enemy.mechanic === 'aquaField') enemyMult *= 1.1
+  let incoming = Math.floor(enemyAtk * enemyMult * (0.85 + Math.random() * 0.3))
+  if (b.enemy.mechanic === 'tideShell' && b.enemy.shield > b.enemy.maxShield * 0.4) {
+    incoming = Math.floor(incoming * 1.05)
+  }
+  if (b.enemy.mechanic === 'scaleJudgment') {
+    const ratio = b.teamHp / Math.max(1, b.teamMaxHp)
+    if (ratio < 0.4) incoming = Math.floor(incoming * 1.15)
+  }
+  if (b.enemy.mechanic === 'starPierce') {
+    const pierceIn = Math.floor(incoming * 0.2)
+    b.teamHp = Math.max(0, b.teamHp - pierceIn)
+    incoming -= pierceIn
+  }
+  const roundDmg = b.roundDmgToEnemy ?? 0
+  if (b.enemy.mechanic === 'mirrorTwin' && roundDmg > 0) {
+    incoming += Math.floor(roundDmg * 0.12)
+  }
+  if (b.enemy.mechanic === 'venomHeart') {
+    incoming += Math.floor(b.teamMaxHp * 0.008)
+  }
+
+  if ((b.chargeShield ?? 0) > 0 && incoming > 0) {
+    b.chargeShield! -= 1
+    incoming = Math.floor(incoming * 0.15)
+  }
+
+  const mitigated = Math.floor(incoming * (100 / (100 + teamTotals(state).def * 0.15)))
+  const tr = applyDamage(b.teamHp, b.teamShield, mitigated)
+  b.teamHp = tr.hp
+  b.teamShield = tr.shield
+  b.floaters = []
+  b.log = `敵方反擊 · 受到 ${mitigated} 傷害`
 }
 
 export function clearRewards(state: GameState): Partial<Resources> {

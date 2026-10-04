@@ -257,7 +257,14 @@ export interface BattleSnapshot {
   winning: boolean
   /** 次數盾剩餘 */
   chargeShield?: number
-  /** 本 tick 各職出手提示 */
+  /**
+   * 出手序：0..partyN-1 = 隊伍左→右該格行動；partyN = 敵方回合。
+   * 每 battleTick 推進一步。
+   */
+  actIndex?: number
+  /** 本輪隊伍累計對敵傷害（供鏡像等敵方回合結算） */
+  roundDmgToEnemy?: number
+  /** 本 tick 出手角色的飄字（通常僅一位） */
   floaters?: BattleFloater[]
   /** 遞增序號，供 UI 觸發動畫 */
   floaterSeq?: number
