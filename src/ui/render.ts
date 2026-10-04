@@ -170,6 +170,8 @@ function isEditingField(root: HTMLElement): boolean {
 
 /** 爬塔需整頁重繪的簽名（敵人／層數／掉落文案變了才重繪，避免每秒拆掉 img） */
 let lastTowerPaintSig = ''
+/** 戰鬥飄字序號：僅在變更時掛疊加層，不重繪立繪 */
+let lastFloaterSeq = -1
 
 function towerPaintSig(state: GameState): string {
   const b = state.battle
@@ -187,6 +189,36 @@ function towerPaintSig(state: GameState): string {
     state.firstWin.boss ? '1' : '0',
     state.firstWin.godking ? '1' : '0',
   ].join('|')
+}
+
+function spawnBattleFloaters(root: HTMLElement, state: GameState) {
+  const b = state.battle
+  if (!b || b.floaterSeq == null || b.floaterSeq === lastFloaterSeq) return
+  lastFloaterSeq = b.floaterSeq
+  const list = b.floaters ?? []
+  if (!list.length) return
+
+  for (const f of list) {
+    const hero = root.querySelector(`[data-hero-role="${f.role}"]`) as HTMLElement | null
+    if (!hero) continue
+    const portrait = hero.querySelector('.portrait') as HTMLElement | null
+    if (portrait) {
+      portrait.classList.remove('portrait-strike')
+      // 強制重啟 CSS 動畫
+      void portrait.offsetWidth
+      portrait.classList.add('portrait-strike')
+      window.setTimeout(() => portrait.classList.remove('portrait-strike'), 420)
+    }
+    const layer = hero.querySelector('[data-floater-layer]') as HTMLElement | null
+    if (!layer) continue
+    const el = document.createElement('div')
+    el.className = `battle-floater ${f.kind} ${f.role}`
+    el.textContent = f.text
+    const stack = layer.querySelectorAll('.battle-floater').length
+    el.style.bottom = `${40 + stack * 16}%`
+    layer.appendChild(el)
+    window.setTimeout(() => el.remove(), 950)
+  }
 }
 
 function patchLiveHud(root: HTMLElement, state: GameState) {
@@ -223,6 +255,7 @@ function patchLiveHud(root: HTMLElement, state: GameState) {
   }
   const logEl = root.querySelector('[data-battle-log]') as HTMLElement | null
   if (logEl) logEl.textContent = b.log || '準備戰鬥…'
+  spawnBattleFloaters(root, state)
 }
 
 function toast(app: HTMLElement, msg: string, holdMs = 1800) {
@@ -446,11 +479,20 @@ function towerView(state: GameState): string {
           .map((role) => {
             const ch = getRoleCharacter(state, role)
             if (!ch) {
-              return `<div class="hero"><div class="portrait ${role}"></div><div class="meta"><div class="n">${ROLE_LABEL[role]}</div></div></div>`
+              return `<div class="hero" data-hero-role="${role}">
+              <div class="portrait-wrap">
+                <div class="portrait ${role}"></div>
+                <div class="battle-floater-layer" data-floater-layer></div>
+              </div>
+              <div class="meta"><div class="n">${ROLE_LABEL[role]}</div></div>
+            </div>`
             }
             const def = CHAR_MAP[ch.defId]
-            return `<div class="hero">
-              <img class="portrait ${role}" src="${def.portrait}" alt="${def.name}" loading="lazy" decoding="async" />
+            return `<div class="hero" data-hero-role="${role}">
+              <div class="portrait-wrap">
+                <img class="portrait ${role}" src="${def.portrait}" alt="${def.name}" loading="lazy" decoding="async" />
+                <div class="battle-floater-layer" data-floater-layer></div>
+              </div>
               <div class="meta">
                 <div class="n">${nameSpan(def.name, ch.rarity)}</div>
               </div>
@@ -743,13 +785,17 @@ function roleEquipBlock(state: GameState, role: Role): string {
 function roleRelicBlock(state: GameState, role: Role): string {
   const ch = getRoleCharacter(state, role)
   const rebirth = ch?.rebirth ?? 0
-  const unlocked = relicsUnlockedByRebirth(rebirth)
+  const unlocked = relicsUnlockedByRebirth(rebirth, role)
   const cur = state.loadouts[role].relicId
   const inv = new Set(state.relicInventory ?? [])
-  const options = RELICS.filter((r) => inv.has(r.id) || unlocked.some((u) => u.id === r.id) || cur === r.id)
+  const options = RELICS.filter(
+    (r) =>
+      r.role === role &&
+      (inv.has(r.id) || unlocked.some((u) => u.id === r.id) || cur === r.id),
+  )
   return `<div class="panel">
     <div class="section-title">${ROLE_LABEL[role]} · 遺物</div>
-    <div class="muted">依出戰角色轉生解鎖；裝在職業格上，全隊該職生效</div>
+    <div class="muted">職業特化遺物：僅本職可裝；依出戰角色轉生解鎖</div>
     <div class="btn-row" style="margin-top:8px">
       <button class="btn ${!cur ? 'primary' : ''}" data-act="relic" data-role="${role}">卸下</button>
       ${options
@@ -1864,7 +1910,11 @@ export function render(root: HTMLElement, kind: 'tick' | 'ui' = 'ui') {
 
   const tabChanged = prevTab !== null && prevTab !== state.tab
   prevTab = state.tab
-  if (state.tab === 'tower') lastTowerPaintSig = towerPaintSig(state)
+  if (state.tab === 'tower') {
+    lastTowerPaintSig = towerPaintSig(state)
+    // 整頁重繪後對齊序號，避免立刻重播上一 tick 飄字
+    lastFloaterSeq = state.battle?.floaterSeq ?? -1
+  }
 
   root.innerHTML = `<div class="phone">
     ${topbar(state)}

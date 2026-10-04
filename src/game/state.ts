@@ -6,7 +6,7 @@ import {
   migrateLegacyEquipDefId,
   parseEquipDefId,
 } from './data/equipment'
-import { RELIC_MAP, relicsUnlockedByRebirth } from './data/relics'
+import { RELIC_MAP, migrateLegacyRelicId, relicsUnlockedByRebirth } from './data/relics'
 import { SKILL_MAP, defaultSkills, dropSkillRarity, shopSkillCatalog } from './data/skills'
 import {
   battleTick,
@@ -82,6 +82,7 @@ import {
   nextRarity,
   ownedCardShopCost,
   rarityIndex,
+  ROLE_LABEL,
   shopSkillCost,
   skillAscendCardCost,
   skillUpgradeCost,
@@ -384,15 +385,38 @@ export function normalizeState(s: GameState): GameState {
       s.loadouts[role].skills[kind] = item.uid
       validSkill.add(item.uid)
     }
-    if (s.loadouts[role].relicId && !RELIC_MAP[s.loadouts[role].relicId!]) {
-      s.loadouts[role].relicId = undefined
-    }
+    // 舊通用遺物 → 職業特化；錯職／未知則清空
+    const migrated = migrateLegacyRelicId(s.loadouts[role].relicId, role)
+    s.loadouts[role].relicId = migrated
   }
 
-  // 依轉生補遺物庫
+  // 遺物庫：遷移舊 id、清未知，再依各職轉生解鎖
+  {
+    const nextInv: string[] = []
+    for (const id of s.relicInventory) {
+      if (RELIC_MAP[id]) {
+        if (!nextInv.includes(id)) nextInv.push(id)
+        continue
+      }
+      for (const role of ROLES) {
+        const m = migrateLegacyRelicId(id, role)
+        if (m && !nextInv.includes(m)) nextInv.push(m)
+      }
+    }
+    s.relicInventory = nextInv
+  }
   for (const ch of s.roster) {
-    for (const r of relicsUnlockedByRebirth(ch.rebirth ?? 0)) {
+    const role = CHAR_MAP[ch.defId]?.role
+    if (!role) continue
+    for (const r of relicsUnlockedByRebirth(ch.rebirth ?? 0, role)) {
       if (!s.relicInventory.includes(r.id)) s.relicInventory.push(r.id)
+    }
+  }
+  // 裝備中的遺物若不在庫中則補入（合法 id）
+  for (const role of ROLES) {
+    const id = s.loadouts[role].relicId
+    if (id && RELIC_MAP[id]?.role === role && !s.relicInventory.includes(id)) {
+      s.relicInventory.push(id)
     }
   }
 
@@ -686,7 +710,8 @@ export function rebirthCharacter(uidStr: string): string | null {
   state.resources.gold -= cost.gold
   ch.rebirth = (ch.rebirth ?? 0) + 1
   ch.level = 1
-  for (const r of relicsUnlockedByRebirth(ch.rebirth)) {
+  const role = CHAR_MAP[ch.defId]?.role
+  for (const r of relicsUnlockedByRebirth(ch.rebirth, role)) {
     if (!state.relicInventory.includes(r.id)) state.relicInventory.push(r.id)
   }
   state.battle = createBattle(state)
@@ -872,7 +897,9 @@ export function equipOnCharacter(charUid: string, equipUid: string): string | nu
 export function equipRelicOnRole(role: Role, relicId: string | undefined): string | null {
   if (relicId) {
     if (!state.relicInventory.includes(relicId)) return '尚未解鎖此遺物'
-    if (!RELIC_MAP[relicId]) return '無效遺物'
+    const def = RELIC_MAP[relicId]
+    if (!def) return '無效遺物'
+    if (def.role !== role) return `此遺物僅供${ROLE_LABEL[def.role]}裝備`
     for (const r of ROLES) {
       if (state.loadouts[r].relicId === relicId) state.loadouts[r].relicId = undefined
     }

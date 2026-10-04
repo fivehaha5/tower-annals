@@ -184,6 +184,8 @@ export interface RoleLoadout {
 export interface RelicDef {
   id: string
   name: string
+  /** 僅可裝備於該職業 */
+  role: Role
   /** 解鎖所需轉生（質數） */
   needRebirth: number
   desc: string
@@ -195,7 +197,16 @@ export interface RelicDef {
     def?: number
     heal?: number
     trueDamageBonus?: number
+    /** 該職技能威力加成 */
+    skillPower?: number
   }
+}
+
+/** 單次回合戰鬥飄字 */
+export interface BattleFloater {
+  role: Role
+  text: string
+  kind: 'dmg' | 'heal' | 'shield'
 }
 
 export interface DispatchMission {
@@ -246,6 +257,10 @@ export interface BattleSnapshot {
   winning: boolean
   /** 次數盾剩餘 */
   chargeShield?: number
+  /** 本 tick 各職出手提示 */
+  floaters?: BattleFloater[]
+  /** 遞增序號，供 UI 觸發動畫 */
+  floaterSeq?: number
 }
 
 export interface LootDrop {

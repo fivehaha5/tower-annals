@@ -6,6 +6,7 @@ import { buildEnemy } from './enemies'
 import { rollClearLoot } from './drops'
 import { roleRebirthBonus } from './mechanics'
 import type {
+  BattleFloater,
   BattleSnapshot,
   Element,
   GameState,
@@ -28,6 +29,7 @@ import {
   maxEquipTierForRebirth,
   rarityMult,
   rebirthMult,
+  ROLE_LABEL,
   scaleStats,
   type LootCost,
 } from './util'
@@ -233,24 +235,38 @@ export function battleTick(state: GameState): {
   let shieldLeech = 0
   let pierce = 0
   let mirror = 0
+  const roleDmg: Record<Role, number> = { warrior: 0, mage: 0, priest: 0 }
+  const roleHeal: Record<Role, number> = { warrior: 0, mage: 0, priest: 0 }
+  const roleShield: Record<Role, number> = { warrior: 0, mage: 0, priest: 0 }
 
   for (const { role, ch } of teamEntries) {
     const stats = calcCharStats(state, ch)
     const relic = relicEffects(state, role)
+    const skillPow = 1 + (relic?.skillPower ?? 0)
     if (relic?.overhealToShield) overhealRatio = Math.max(overhealRatio, relic.overhealToShield)
-    if (relic?.trueDamageBonus) trueDealt += stats.atk * relic.trueDamageBonus * 0.3
-    if (relic?.heal) healed += stats.atk * 0.05 * relic.heal
+    if (relic?.trueDamageBonus) {
+      const td = stats.atk * relic.trueDamageBonus * 0.3
+      trueDealt += td
+      roleDmg[role] += td
+    }
+    if (relic?.heal) {
+      const rh = stats.atk * 0.05 * relic.heal
+      healed += rh
+      roleHeal[role] += rh
+    }
 
     for (const kind of castOrder) {
       const owned = getEquippedSkill(state, role, kind)
       const skill = owned ? SKILL_MAP[owned.skillId] : undefined
       if (!skill) continue
-      const str = skillStrength(owned)
+      const str = skillStrength(owned) * skillPow
       let mult = elementMult(skill.element as Element, b.enemy.element)
       if (hasEffect(skill.id, 'fogBreak')) fogBreak = true
       if (hasEffect(skill.id, 'trueDamage')) {
         const tv = hasEffect(skill.id, 'trueDamage')
-        trueDealt += stats.atk * skill.power * str * tv
+        const td = stats.atk * skill.power * str * tv
+        trueDealt += td
+        roleDmg[role] += td
         mult = 1
       }
       if (b.enemy.mechanic === 'fogLayer' && skill.element !== '水' && !fogBreak) {
@@ -260,17 +276,22 @@ export function battleTick(state: GameState): {
         darkAmp = Math.max(darkAmp, hasEffect(skill.id, 'darkAmp'))
         mult *= 1 + darkAmp
       }
-      dealt += stats.atk * skill.power * str * mult * (kind === 'attack' ? 1 : 0.55)
+      const dmgPart = stats.atk * skill.power * str * mult * (kind === 'attack' ? 1 : 0.55)
+      dealt += dmgPart
+      roleDmg[role] += dmgPart
       let h = stats.atk * skill.healPower * str
       if (relic?.heal) h *= 1 + relic.heal
       if (hasEffect(skill.id, 'balanceHeal') && b.teamHp < b.teamMaxHp * 0.5) {
         h *= 1 + hasEffect(skill.id, 'balanceHeal')
       }
       healed += h
-      shielded +=
+      roleHeal[role] += h
+      const shPart =
         stats.shield * 0.04 * skill.shieldPower * str +
         stats.atk * skill.shieldPower * 0.12 * str +
         (kind === 'defense' ? stats.def * 0.35 * str : 0)
+      shielded += shPart
+      roleShield[role] += shPart
       const cs = hasEffect(skill.id, 'chargeShield')
       if (cs) b.chargeShield = (b.chargeShield ?? 0) + Math.floor(cs)
       if (hasEffect(skill.id, 'overhealToShield')) {
@@ -291,9 +312,15 @@ export function battleTick(state: GameState): {
   }
 
   if (mirror > 0) {
-    dealt *= 1 + mirror * 0.35
-    healed *= 1 + mirror * 0.35
-    shielded *= 1 + mirror * 0.35
+    const m = 1 + mirror * 0.35
+    dealt *= m
+    healed *= m
+    shielded *= m
+    for (const role of ROLES) {
+      roleDmg[role] *= m
+      roleHeal[role] *= m
+      roleShield[role] *= m
+    }
   }
 
   // Boss 機制：編譯錯位
@@ -384,6 +411,28 @@ export function battleTick(state: GameState): {
   b.teamShield = tr.shield
   b.log = `造成 ${dmgToEnemy} 傷害 · 受到 ${mitigated} 傷害`
   b.winning = b.teamHp > 0 && teamPower(state) >= b.enemy.power * 0.7
+
+  // 各職出手飄字（依本 tick 貢獻比例對齊最終數值）
+  const floaters: BattleFloater[] = []
+  const rawDmgTotal = ROLES.reduce((s, r) => s + roleDmg[r], 0)
+  const rawHealTotal = ROLES.reduce((s, r) => s + roleHeal[r], 0)
+  const rawShieldTotal = ROLES.reduce((s, r) => s + roleShield[r], 0)
+  for (const role of ROLES) {
+    if (rawDmgTotal > 0 && roleDmg[role] > 0 && dmgToEnemy > 0) {
+      const n = Math.max(1, Math.floor((dmgToEnemy * roleDmg[role]) / rawDmgTotal))
+      floaters.push({ role, text: `${ROLE_LABEL[role]} -${n}`, kind: 'dmg' })
+    }
+    if (rawHealTotal > 0 && roleHeal[role] > 0 && healAmt > 0) {
+      const n = Math.max(1, Math.floor((healAmt * roleHeal[role]) / rawHealTotal))
+      floaters.push({ role, text: `${ROLE_LABEL[role]} +${n}`, kind: 'heal' })
+    }
+    if (rawShieldTotal > 0 && roleShield[role] > 0 && shAdd > 0) {
+      const n = Math.max(1, Math.floor((shAdd * roleShield[role]) / rawShieldTotal))
+      floaters.push({ role, text: `${ROLE_LABEL[role]} 盾+${n}`, kind: 'shield' })
+    }
+  }
+  b.floaters = floaters
+  if (floaters.length > 0) b.floaterSeq = (b.floaterSeq ?? 0) + 1
 
   if (b.enemy.hp <= 0) {
     const resources = clearRewards(state)

@@ -1238,6 +1238,92 @@ body {
   font-size: 12px;
 }
 
+.portrait-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.battle-floater-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 2;
+}
+
+.battle-floater {
+  position: absolute;
+  left: 50%;
+  bottom: 42%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  animation: battle-floater-rise 0.9s ease-out forwards;
+}
+
+.battle-floater.dmg {
+  color: #ff8f7a;
+}
+.battle-floater.heal {
+  color: #7dffb2;
+}
+.battle-floater.shield {
+  color: #8ecbff;
+}
+.battle-floater.warrior {
+  filter: drop-shadow(0 0 4px rgba(212, 160, 23, 0.45));
+}
+.battle-floater.mage {
+  filter: drop-shadow(0 0 4px rgba(139, 92, 255, 0.45));
+}
+.battle-floater.priest {
+  filter: drop-shadow(0 0 4px rgba(62, 207, 142, 0.45));
+}
+
+@keyframes battle-floater-rise {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.92);
+  }
+  18% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-28px) scale(1.05);
+  }
+}
+
+.portrait.portrait-strike {
+  animation: portrait-strike 0.38s ease-out;
+}
+
+.portrait.warrior.portrait-strike {
+  box-shadow: 0 0 0 2px var(--warrior);
+}
+.portrait.mage.portrait-strike {
+  box-shadow: 0 0 0 2px var(--mage);
+}
+.portrait.priest.portrait-strike {
+  box-shadow: 0 0 0 2px var(--priest);
+}
+
+@keyframes portrait-strike {
+  0% {
+    transform: scale(1) translateY(0);
+  }
+  35% {
+    transform: scale(1.06) translateY(-3px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
 .floor-pick-grid.compact-picks {
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
