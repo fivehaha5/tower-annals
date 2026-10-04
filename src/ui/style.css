@@ -14,7 +14,10 @@
   --warrior: #d4a017;
   --mage: #8b5cff;
   --priest: #3ecf8e;
+  --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* 手機瀏覽器用 svh，避免 100%/dvh 不一致造成底欄懸空 */
+  --app-height: 100svh;
   font-family: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -28,22 +31,30 @@
 html,
 body {
   margin: 0;
+  width: 100%;
   height: 100%;
+  height: var(--app-height);
   overflow: hidden;
+  overscroll-behavior: none;
   background: radial-gradient(120% 80% at 50% 0%, #1a2030 0%, var(--bg) 55%);
 }
 
 #app {
+  width: 100%;
   height: 100%;
+  min-height: var(--app-height);
   display: flex;
   justify-content: center;
+  align-items: stretch;
   background: #05060a;
 }
 
 .phone {
-  width: min(100vw, 430px);
+  width: min(100%, 430px);
   height: 100%;
-  max-height: 100dvh;
+  min-height: 0;
+  flex: 1 1 auto;
+  max-width: 430px;
   display: flex;
   flex-direction: column;
   background:
@@ -59,7 +70,7 @@ body {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
-  padding: 10px 10px 6px;
+  padding: calc(10px + var(--safe-top)) 10px 6px;
   background: rgba(10, 12, 18, 0.92);
   border-bottom: 1px solid var(--line);
   z-index: 5;
@@ -69,7 +80,7 @@ body {
   display: flex;
   flex-wrap: nowrap;
   gap: 6px;
-  padding: 8px 10px;
+  padding: calc(8px + var(--safe-top)) 10px 8px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -118,8 +129,9 @@ body {
 
 .content {
   flex: 1;
+  min-height: 0;
   overflow: auto;
-  padding: 10px 10px 86px;
+  padding: 10px 10px calc(86px + var(--safe-bottom));
   scrollbar-width: thin;
   touch-action: pan-y;
 }
@@ -329,7 +341,7 @@ body {
   right: 0;
   bottom: 0;
   height: calc(72px + var(--safe-bottom));
-  padding: 8px 4px var(--safe-bottom);
+  padding: 8px 4px max(8px, var(--safe-bottom));
   display: block;
   background: rgba(8, 10, 14, 0.96);
   border-top: 1px solid var(--line);
@@ -787,6 +799,7 @@ body {
   position: relative;
   justify-content: flex-end;
   padding: 0;
+  padding-top: var(--safe-top);
   overflow: hidden;
   gap: 0;
 }
