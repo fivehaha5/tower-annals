@@ -34,6 +34,7 @@ import {
   GACHA_COST_TEN,
   CHAR_LEVEL_MAX,
   SHOP_RATES,
+  assetUrl,
   charAscendCost,
   charLevelCost,
   charLevelCostRange,
@@ -1748,7 +1749,7 @@ export function render(root: HTMLElement, kind: 'tick' | 'ui' = 'ui') {
     const showImport = starterImportOpen
     root.innerHTML = `<div class="phone">
       <div class="starter starter-hero">
-        <div class="starter-bg" style="background-image:url('/hero.jpg')" aria-hidden="true"></div>
+        <div class="starter-bg" style="background-image:url('${assetUrl('hero.jpg')}')" aria-hidden="true"></div>
         <div class="starter-scrim" aria-hidden="true"></div>
         <div class="starter-fore">
           <h1 class="hero-title">《${GAME_NAME}》</h1>

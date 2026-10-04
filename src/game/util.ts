@@ -407,6 +407,13 @@ export function addResources(a: Resources, b: Partial<Resources>): Resources {
   }
 }
 
+/** 依 Vite base（本機 `/`、GitHub Pages `/tower-annals/`）組資源路徑 */
+export function assetUrl(path: string): string {
+  const base = import.meta.env.BASE_URL || '/'
+  const clean = path.replace(/^\//, '')
+  return `${base}${clean}`
+}
+
 export function portraitPath(id: string): string {
-  return `/assets/portraits/${id}.jpg`
+  return assetUrl(`assets/portraits/${id}.jpg`)
 }
