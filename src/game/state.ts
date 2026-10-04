@@ -963,7 +963,7 @@ export function fulfillOrder(orderId: string): string | null {
 function rollGachaPick() {
   const weights = GACHA_CHARACTERS.map((c) => ({
     c,
-    w: c.rarity === '普通' ? 10 : c.rarity === '史詩' ? 4 : 1.5,
+    w: c.rarity === '普通' ? 14 : c.rarity === '史詩' ? 2 : 0.7,
   }))
   const total = weights.reduce((s, x) => s + x.w, 0)
   let r = Math.random() * total

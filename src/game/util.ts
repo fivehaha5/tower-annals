@@ -21,13 +21,14 @@ export const SAVE_KEY = 'tower-annals-save-v3'
 export const SAVE_VERSION = 3
 export const GODKING_UNLOCK = 10000
 export const TICK_MS = 1000
-export const LOOT_COST_CRYSTAL = 10000
-/** 定向掉落同時消耗技能書 */
-export const LOOT_COST_SKILLBOOK_AIM = 20
-/** 離線結算上限（秒） */
-export const OFFLINE_CAP_SEC = 8 * 3600
+/** 定向掉落基礎水晶（再 × 輪迴） */
+export const LOOT_COST_CRYSTAL = 12000
+/** 定向掉落基礎技能書（再隨輪迴緩增） */
+export const LOOT_COST_SKILLBOOK_AIM = 25
+/** 離線結算上限（秒）— 收斂為 4 小時 */
+export const OFFLINE_CAP_SEC = 4 * 3600
 /**
- * 前景一次落後達此秒數（含）→ 改走離線結算（8h 上限＋報告）。
+ * 前景一次落後達此秒數（含）→ 改走離線結算（含離線上限＋報告）。
  * 低於此：直接補滿落下的 tick，避免長 AFK 只補到幾秒。
  */
 export const FOREGROUND_OFFLINE_THRESHOLD_SEC = 30
@@ -113,19 +114,19 @@ export const RESOURCE_META: {
   { key: 'soul', name: '神魂', rarity: '傳奇' },
 ]
 
-/** 金鑽商店：1 單位資源需要的金鑽 */
+/** 金鑽商店：1 單位資源需要的金鑽（水晶刻意脫鉤，避免金=水晶） */
 export const SHOP_RATES: Partial<Record<keyof Resources, number>> = {
-  crystal: 1,
-  blueprint: 3,
-  forge: 4,
-  essence: 4,
-  skillbook: 5,
-  soul: 8,
+  crystal: 8,
+  blueprint: 5,
+  forge: 6,
+  essence: 6,
+  skillbook: 8,
+  soul: 12,
 }
 
-export const GACHA_COST_ONE = 20
-export const GACHA_COST_TEN = 180
-export const GACHA_COST_HUNDRED = 1600
+export const GACHA_COST_ONE = 50
+export const GACHA_COST_TEN = 480
+export const GACHA_COST_HUNDRED = 4200
 
 /** 火 > 雷 > 水 > 火；光暗互克 */
 export function elementMult(atk: Element, def: Element): number {
@@ -154,8 +155,8 @@ export function ownedCardShopCost(rarity: Rarity): number {
 
 /** 商店販售技能（普通／稀有）金鑽價 */
 export function shopSkillCost(rarity: Rarity): number {
-  if (rarity === '稀有') return 1200
-  return 400
+  if (rarity === '稀有') return 3600
+  return 1400
 }
 
 export function rarityMult(r: Rarity): number {
@@ -196,12 +197,12 @@ export function charBoostCardCost(boost: number): number {
   return Math.max(1, Math.floor(boost) + 1)
 }
 
-/** 轉生：異界水晶 + 金鑽（對齊中高層刷金／刷水晶節奏） */
+/** 轉生：異界水晶 + 金鑽（抬高門檻，避免轉生戰力過度碾壓） */
 export function charRebirthCost(rebirth: number): { crystal: number; gold: number } {
   const r = Math.max(0, rebirth)
   return {
-    crystal: 6000 + r * 5000 + r * r * 800,
-    gold: 900 + r * 700 + r * r * 120,
+    crystal: 12000 + r * 9000 + r * r * 1600,
+    gold: 2200 + r * 1400 + r * r * 280,
   }
 }
 
@@ -308,18 +309,18 @@ export function equipCraftCost(tier: number): { forge: number; gold: number } {
   return { forge: 18 + t * 14, gold: 12 + t * 10 }
 }
 
-/** 打造品質權重（越高階略偏高品，仍以普通／稀有為主） */
+/** 打造品質權重（高品稀有，長期養成） */
 export function rollCraftedEquipRarity(tier: number): Rarity {
   const t = Math.max(0, Math.floor(tier))
-  const boost = Math.min(0.12, t * 0.015)
+  const boost = Math.min(0.06, t * 0.008)
   const weights: { r: Rarity; w: number }[] = [
-    { r: '普通', w: 0.48 - boost },
+    { r: '普通', w: 0.58 - boost },
     { r: '稀有', w: 0.28 },
-    { r: '史詩', w: 0.14 + boost * 0.4 },
-    { r: '傳奇', w: 0.07 + boost * 0.3 },
-    { r: '神話', w: 0.022 + boost * 0.2 },
-    { r: '永恆', w: 0.006 + boost * 0.08 },
-    { r: '創世', w: 0.002 + boost * 0.02 },
+    { r: '史詩', w: 0.09 + boost * 0.35 },
+    { r: '傳奇', w: 0.035 + boost * 0.25 },
+    { r: '神話', w: 0.01 + boost * 0.12 },
+    { r: '永恆', w: 0.003 + boost * 0.05 },
+    { r: '創世', w: 0.001 + boost * 0.015 },
   ]
   const total = weights.reduce((s, x) => s + Math.max(0.001, x.w), 0)
   let r = Math.random() * total

@@ -27,6 +27,15 @@ function floorOf(state: GameState, mode: 'boss' | 'godking'): number {
   return Math.max(1, Math.min(farm, max))
 }
 
+/** 定向消耗隨輪迴遞增 */
+export function aimLootCost(mode: 'boss' | 'godking', floor: number): LootCost {
+  const cycle = cycleFromFloor(mode, floor)
+  return {
+    crystal: LOOT_COST_CRYSTAL * cycle,
+    skillbook: LOOT_COST_SKILLBOOK_AIM + Math.floor((cycle - 1) * 8),
+  }
+}
+
 /**
  * 首勝：必掉角色卡＋獨特技能各一（免費）
  * 空刷 aim=none：免費，依輪迴機率掉
@@ -68,17 +77,13 @@ export function rollClearLoot(state: GameState, mode: IdleMode): {
     return { loot, cost: emptyLootCost() }
   }
 
+  const cost = aimLootCost(key, floor)
   const canPay =
-    state.resources.crystal >= LOOT_COST_CRYSTAL &&
-    state.resources.skillbook >= LOOT_COST_SKILLBOOK_AIM
+    state.resources.crystal >= cost.crystal && state.resources.skillbook >= cost.skillbook
   if (!canPay) {
     return { loot: {}, cost: emptyLootCost(), aimCancelled: true }
   }
 
-  const cost: LootCost = {
-    crystal: LOOT_COST_CRYSTAL,
-    skillbook: LOOT_COST_SKILLBOOK_AIM,
-  }
   const loot: LootDrop = { paid: true, guaranteed: true }
 
   if (settings.aim === 'character') {
@@ -98,9 +103,11 @@ export function rollClearLoot(state: GameState, mode: IdleMode): {
 
 export function currentCycleDropInfo(state: GameState, mode: 'boss' | 'godking') {
   const floor = floorOf(state, mode)
+  const cycle = cycleFromFloor(mode, floor)
   return {
     floor,
-    cycle: cycleFromFloor(mode, floor),
+    cycle,
     rate: cycleDropRate(mode, floor),
+    aimCost: aimLootCost(mode, floor),
   }
 }

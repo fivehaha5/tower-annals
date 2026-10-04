@@ -392,8 +392,20 @@ export function battleTick(state: GameState): {
   }
 
   if (b.teamHp <= 0) {
+    const floor = farmFloorOf(state)
+    const crystalLoss = Math.min(state.resources.crystal, Math.floor(30 + floor * 2.2))
+    const goldLoss = Math.min(state.resources.gold, Math.max(0, Math.floor(2 + floor / 18)))
+    state.resources.crystal -= crystalLoss
+    state.resources.gold -= goldLoss
     state.battle = createBattle(state)
-    state.battle.log = '隊伍倒下，重整再戰（無懲罰）'
+    const lossTip =
+      crystalLoss || goldLoss
+        ? `（損失 ${crystalLoss} 水晶${goldLoss ? `、${goldLoss} 金鑽` : ''}）`
+        : ''
+    state.battle.log = `隊伍倒下，重整再戰${lossTip}`
+    if (crystalLoss || goldLoss) {
+      state.pendingToast = `戰敗懲罰：-${crystalLoss} 水晶${goldLoss ? `、-${goldLoss} 金鑽` : ''}`
+    }
     return { cleared: false, resources: {}, loot: {}, lootCost: emptyLootCost() }
   }
 
@@ -402,36 +414,36 @@ export function battleTick(state: GameState): {
 
 export function clearRewards(state: GameState): Partial<Resources> {
   const floor = farmFloorOf(state)
-  const mainCrystalBase = Math.floor(12 + floor * 2.0)
-  const mainMiniBonus = floor % 10 === 0 ? Math.floor(mainCrystalBase * 1.55) : 0
+  const mainCrystalBase = Math.floor(7 + floor * 1.15)
+  const mainMiniBonus = floor % 10 === 0 ? Math.floor(mainCrystalBase * 1.35) : 0
 
   if (state.idleMode === 'main') {
     return {
       crystal: mainCrystalBase + mainMiniBonus,
-      gold: Math.max(1, Math.floor(2 + floor / 14)),
+      gold: Math.max(1, Math.floor(1 + floor / 22)),
     }
   }
   if (state.idleMode === 'blueprint') {
-    const mainEquivalent = mainCrystalBase + Math.floor(mainCrystalBase * 1.55)
+    const mainEquivalent = mainCrystalBase + Math.floor(mainCrystalBase * 1.35)
     return {
-      crystal: Math.max(1, Math.floor(mainEquivalent * 0.22)),
-      blueprint: Math.floor(4 + floor * 0.45),
-      forge: Math.max(0, Math.floor(floor * 0.08)),
+      crystal: Math.max(1, Math.floor(mainEquivalent * 0.18)),
+      blueprint: Math.floor(2 + floor * 0.32),
+      forge: Math.max(0, Math.floor(floor * 0.05)),
     }
   }
   if (state.idleMode === 'boss') {
     return {
-      crystal: Math.floor(mainCrystalBase * 1.8),
-      gold: Math.floor(10 + floor * 2.5),
-      soul: Math.max(1, Math.floor(1 + floor * 0.35)),
+      crystal: Math.floor(mainCrystalBase * 1.45),
+      gold: Math.floor(6 + floor * 1.6),
+      soul: Math.max(1, Math.floor(1 + floor * 0.22)),
     }
   }
   return {
-    crystal: Math.floor(mainCrystalBase * 2.4),
-    gold: Math.floor(18 + floor * 4),
-    soul: Math.max(2, Math.floor(2 + floor * 0.8)),
-    essence: Math.max(1, Math.floor(floor * 0.4)),
-    skillbook: Math.max(1, Math.floor(floor * 0.25)),
+    crystal: Math.floor(mainCrystalBase * 1.9),
+    gold: Math.floor(10 + floor * 2.4),
+    soul: Math.max(1, Math.floor(1 + floor * 0.5)),
+    essence: Math.max(1, Math.floor(floor * 0.28)),
+    skillbook: Math.max(1, Math.floor(floor * 0.16)),
   }
 }
 

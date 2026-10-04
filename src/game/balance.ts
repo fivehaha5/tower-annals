@@ -9,9 +9,9 @@
  * 3. 王塔／異域神王 → 神話／永恆角色卡＋獨特技能（首勝免費；之後耗水晶，定向另耗技能書）
  *
  * ## 養成循環
- * 升級（水晶，上限 100）→ 滿級轉生（大量水晶+金鑽，Lv 回 1，轉生+1）
- * → 進階（神魂）／增效（同名卡）／技能強化（精華）／技能升階（同名卡）
- * → 裝備強化（熔鍛+金鑽）升階（熔鍛+金鑽）
+ * 升級（水晶，上限 100）→ 滿級轉生（高額水晶+金鑽，Lv 回 1，轉生+1；戰力 +20%/次）
+ * → 進階（神魂）／增效（同名卡遞增）／技能強化（精華）／技能升階（同名卡）
+ * → 裝備強化（熔鍛+金鑽）；戰敗扣水晶／金鑽
  *
  * ## 戰力里程碑（約略可穩刷）
  * - 新手編隊：主塔 ~10
@@ -55,11 +55,11 @@ export function godkingEnemyPower(floor: number): number {
  * - 王塔每輪 6 層，戰力約 ×2.15^6 ≈ ×100
  * - 神王每輪 12 層，戰力約 ×1.55^12 ≈ ×130
  * 難度跨輪極陡，掉率只給溫和絕對加成，並設軟上限避免必出。
- * 第 1 輪 20%；之後每多一輪 +3.5%，上限 48%。
+ * 第 1 輪 10%；之後每多一輪 +2%，上限 28%。
  */
-export const CYCLE_DROP_BASE = 0.2
-export const CYCLE_DROP_BONUS = 0.035
-export const CYCLE_DROP_CAP = 0.48
+export const CYCLE_DROP_BASE = 0.1
+export const CYCLE_DROP_BONUS = 0.02
+export const CYCLE_DROP_CAP = 0.28
 
 export function bossPoolSize(mode: 'boss' | 'godking'): number {
   return mode === 'boss' ? 6 : 12
@@ -82,8 +82,8 @@ export const RARITY_MULT_STEP = 0.35
 /** 進階倍率步長 */
 export const ASCEND_MULT_STEP = 0.14
 
-/** 轉生倍率步長（轉生是穿裝權限＋戰力雙收益） */
-export const REBIRTH_MULT_STEP = 0.26
+/** 轉生倍率步長（轉生門檻已提高，戰力步長略收） */
+export const REBIRTH_MULT_STEP = 0.2
 
 /** 裝備階級成長：高階解鎖要有感 */
 export const EQUIP_TIER_SCALE = 0.8

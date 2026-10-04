@@ -53,15 +53,14 @@ export function enemyElement(floor: number): Element {
   return pool[floor % pool.length]
 }
 
-/** 副塔：全小 Boss；主塔：每 10 層小 Boss；王塔／神王：首領 */
+/** 主塔／副塔：每 10／5 層小 Boss；王塔／神王：首領 */
 export function isBossFloor(mode: IdleMode, floor: number): boolean {
   if (mode === 'boss' || mode === 'godking') return true
-  if (mode === 'blueprint') return true
-  return floor > 0 && floor % 10 === 0
+  return isMiniBossFloor(mode, floor)
 }
 
 export function isMiniBossFloor(mode: IdleMode, floor: number): boolean {
-  if (mode === 'blueprint') return true
+  if (mode === 'blueprint') return floor > 0 && floor % 5 === 0
   if (mode === 'main') return floor > 0 && floor % 10 === 0
   return false
 }

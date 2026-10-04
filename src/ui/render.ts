@@ -21,8 +21,6 @@ import { enemyTargetPower } from '../game/enemies'
 import {
   GAME_NAME,
   GODKING_UNLOCK,
-  LOOT_COST_CRYSTAL,
-  LOOT_COST_SKILLBOOK_AIM,
   FOREGROUND_OFFLINE_THRESHOLD_SEC,
   OFFLINE_CAP_SEC,
   RESOURCE_META,
@@ -341,6 +339,7 @@ function dropPanel(state: GameState, mode: 'boss' | 'godking'): string {
   const skills = uniqueSkillsBySource(mode)
   const cycleInfo = currentCycleDropInfo(state, mode)
   const ratePct = (cycleInfo.rate * 100).toFixed(1)
+  const aimCost = cycleInfo.aimCost
   const aimLabel =
     ds.aim === 'none' ? `空刷 ${ratePct}%` : ds.aim === 'character' ? '定向角色' : '定向技能'
   const open = uiFlag('__foldDrop')
@@ -356,7 +355,7 @@ function dropPanel(state: GameState, mode: 'boss' | 'godking'): string {
       open
         ? `<div class="muted" style="margin-top:6px">${
             first
-              ? `空刷免費機率掉；定向耗 ${formatNum(LOOT_COST_CRYSTAL)} 水晶＋${formatNum(LOOT_COST_SKILLBOOK_AIM)} 書必掉`
+              ? `空刷免費機率掉；定向耗 ${formatNum(aimCost.crystal)} 水晶＋${formatNum(aimCost.skillbook)} 書（隨輪迴遞增）`
               : '尚未首勝：下一勝必掉角色＋技能'
           }</div>
     <div class="btn-row" style="margin-top:8px">
@@ -1477,10 +1476,10 @@ function gameGuideModal(): string {
   return `<div class="modal guide-modal" data-act="guide-close"><div class="sheet" data-stop="1">
     <h3>遊戲引導</h3>
     <div class="muted" style="text-align:left;line-height:1.55;max-height:55vh;overflow-y:auto">
-      <p><strong>爬塔</strong>：主塔／副塔可沖層或原地刷；王塔／神王可空刷（免費機率）或定向（水晶＋技能書必掉）。定向資源不足會提示並自動改回空刷。</p>
+      <p><strong>爬塔</strong>：主塔／副塔可沖層或原地刷（副塔每 5 層小首領）；戰敗會扣水晶／金鑽。王塔／神王可空刷（低機率）或定向（水晶＋技能書隨輪迴遞增）；資源不足會改回空刷。</p>
       <p><strong>職業編隊</strong>：戰士、法師、牧師各有獨立 loadout——出戰角色、七部位裝備、三技能格、遺物。換角色不改裝備配置。</p>
-      <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），品質依機率；強化只加等級，不能事後升品。</p>
-      <p><strong>技能</strong>：商店普通／稀有；更高階靠升階或王塔／神王獨特技，升階耗同名卡。</p>
+      <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），高品機率偏低；強化只加等級，不能事後升品。</p>
+      <p><strong>技能</strong>：商店普通／稀有（金鑽較貴）；更高階靠升階或王塔／神王獨特技，升階耗同名卡。</p>
       <p><strong>後勤</strong>：每工位最多 ${workStationCap(1)} 人（主塔每 1000 層 +1，上限 6）；每 ${WORK_BATCH_SEC} 秒一批；主塔每 100 層 +4%（上限 80%）。含打造、訂單、派遣。</p>
       <p><strong>養成消耗</strong>：進階神魂、增效同名卡、技能精華、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。</p>
       <p><strong>派遣</strong>：席位有上限；獎勵隨主塔層遞增。非出戰、非打工角色可遠征。</p>
