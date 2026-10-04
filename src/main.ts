@@ -1,4 +1,5 @@
 import './ui/style.css'
+import { startAutoUpdateChecks } from './appUpdate'
 import { bootState, saveLocal } from './game/save'
 import { applyOfflineOnBoot, gameTick, getState, subscribe } from './game/state'
 import { render } from './ui/render'
@@ -13,6 +14,8 @@ syncAppHeight()
 window.addEventListener('resize', syncAppHeight)
 window.visualViewport?.addEventListener('resize', syncAppHeight)
 window.visualViewport?.addEventListener('scroll', syncAppHeight)
+
+startAutoUpdateChecks()
 
 const app = document.querySelector<HTMLElement>('#app')!
 bootState()

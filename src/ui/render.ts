@@ -85,6 +85,7 @@ import {
 } from '../game/logistics'
 import { RELIC_MAP, RELICS, relicsUnlockedByRebirth } from '../game/data/relics'
 import { countRebirthBonusCells, roleRebirthBonus } from '../game/mechanics'
+import { APP_VERSION, checkAppUpdate } from '../appUpdate'
 
 const MODE_LABEL: Record<IdleMode, string> = {
   main: '主塔',
@@ -1490,6 +1491,10 @@ function settingsView(_state: GameState): string {
       <div class="btn-row" style="margin-top:8px">
         <button class="btn primary" data-act="importcode">還原</button>
       </div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn" data-act="checkupdate" style="width:100%">檢查更新</button>
+      </div>
+      <p class="muted" style="margin-top:8px">建置 ${escapeHtml(APP_VERSION)}</p>
     </div>
   `
 }
@@ -2249,6 +2254,15 @@ function bind(root: HTMLElement) {
         const data = importSave(raw)
         if (!data) return toast(root, '無效')
         restoreFromSave(root, data)
+      }
+      if (act === 'checkupdate') {
+        toast(root, '檢查中…')
+        const result = await checkAppUpdate({ manual: true })
+        if (result === 'reloading') return
+        if (result === 'current') toast(root, '已是最新版本')
+        else if (result === 'blocked') toast(root, '偵測到新版但快取未刷新，請稍後再試或強制重新整理')
+        else toast(root, '檢查更新失敗')
+        return
       }
       saveLocal(actions.getState())
     })
