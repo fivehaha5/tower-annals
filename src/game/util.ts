@@ -185,9 +185,15 @@ export function charLevelCostRange(fromLevel: number, times: number): number {
   return total
 }
 
-/** 角色進階：神魂 */
+/** 角色進階：神魂（隨進階次數遞增） */
 export function charAscendCost(ascend: number): number {
-  return 4 + ascend * 5
+  const a = Math.max(0, Math.floor(ascend))
+  return Math.floor(8 + a * 7 + a * a * 1.4)
+}
+
+/** 角色增效：多餘同名卡（第 n 次增效耗 n 張） */
+export function charBoostCardCost(boost: number): number {
+  return Math.max(1, Math.floor(boost) + 1)
 }
 
 /** 轉生：異界水晶 + 金鑽（對齊中高層刷金／刷水晶節奏） */
@@ -270,9 +276,10 @@ export function nextBlueprintUnlockFloor(floor: number): number {
   return nextPrimeAfter(progress) * 100
 }
 
-/** 技能強化：法術精華 */
+/** 技能強化：法術精華（隨等級遞增） */
 export function skillUpgradeCost(level: number): number {
-  return 4 + level * 3
+  const lv = Math.max(1, Math.floor(level))
+  return Math.floor(6 + lv * 4 + lv * lv * 0.18)
 }
 
 /** 技能升階：消耗同名角色卡（保留本體，多餘卡作材料） */
@@ -281,9 +288,13 @@ export function skillAscendCardCost(rarity: Rarity): number {
   return 1 + rarityIndex(rarity)
 }
 
-/** 裝備強化：熔鍛碎片 + 金鑽 */
+/** 裝備強化：熔鍛碎片 + 金鑽（隨等級遞增） */
 export function equipUpgradeCost(level: number): { forge: number; gold: number } {
-  return { forge: 5 + level * 3, gold: 3 + level * 2 }
+  const lv = Math.max(1, Math.floor(level))
+  return {
+    forge: Math.floor(8 + lv * 4 + lv * lv * 0.12),
+    gold: Math.floor(5 + lv * 3 + lv * lv * 0.08),
+  }
 }
 
 /** 藍圖消耗（打造時） */

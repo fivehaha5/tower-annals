@@ -29,6 +29,7 @@ import {
   isOnDispatch,
   scaleWorkYield,
   startDispatch,
+  workStationCap,
   type DispatchOption,
 } from './logistics'
 import type {
@@ -64,6 +65,7 @@ import {
   TICK_MS,
   addResources,
   charAscendCost,
+  charBoostCardCost,
   charLevelCost,
   charRebirthCost,
   defaultFormation,
@@ -503,7 +505,7 @@ function workYieldRaw(job: WorkJob, ch: OwnedCharacter): Partial<Resources> {
   }
 }
 
-/** 每 WORK_BATCH_SEC 秒結算一批 */
+/** 每 WORK_BATCH_SEC 秒結算一批（各工位僅前 N 名有效，超出人數不產） */
 function collectWorkBatches(seconds: number): Partial<Resources> {
   state.workAcc = (state.workAcc ?? 0) + seconds
   const batches = Math.floor(state.workAcc / WORK_BATCH_SEC)
@@ -511,18 +513,23 @@ function collectWorkBatches(seconds: number): Partial<Resources> {
   state.workAcc -= batches * WORK_BATCH_SEC
   let gains = emptyResources()
   const fighting = fightingUids(state)
-  for (const ch of state.roster) {
-    if (!ch.workJob) continue
-    if (fighting.has(ch.uid)) continue
-    if (isOnDispatch(ch)) continue
-    const role = CHAR_MAP[ch.defId].role
-    const perSec = workYieldRaw(ch.workJob, ch)
-    const perBatch: Partial<Resources> = {}
-    for (const [k, v] of Object.entries(perSec) as [keyof Resources, number][]) {
-      if (v) perBatch[k] = v * WORK_BATCH_SEC
+  const cap = workStationCap(state.floors.main)
+  const jobs: WorkJob[] = ['gold', 'forge', 'essence', 'skillbook', 'soul']
+  for (const job of jobs) {
+    const workers = state.roster
+      .filter((ch) => ch.workJob === job && !fighting.has(ch.uid) && !isOnDispatch(ch))
+      .sort((a, b) => (b.boost ?? 0) - (a.boost ?? 0) || b.level - a.level)
+      .slice(0, cap)
+    for (const ch of workers) {
+      const role = CHAR_MAP[ch.defId].role
+      const perSec = workYieldRaw(job, ch)
+      const perBatch: Partial<Resources> = {}
+      for (const [k, v] of Object.entries(perSec) as [keyof Resources, number][]) {
+        if (v) perBatch[k] = v * WORK_BATCH_SEC
+      }
+      const scaled = scaleWorkYield(perBatch, role, job, state.floors.main)
+      for (let i = 0; i < batches; i++) gains = addResources(gains, scaled)
     }
-    const scaled = scaleWorkYield(perBatch, role, ch.workJob, state.floors.main)
-    for (let i = 0; i < batches; i++) gains = addResources(gains, scaled)
   }
   return gains
 }
@@ -700,8 +707,10 @@ export function ascendCharacter(uidStr: string) {
 export function boostCharacter(uidStr: string): string | null {
   const ch = getOwned(state, uidStr)
   if (!ch) return '找不到角色'
-  if ((ch.count ?? 1) < 2) return '需要多餘的同名卡'
-  ch.count -= 1
+  const cost = charBoostCardCost(ch.boost ?? 0)
+  const stack = Math.max(1, ch.count ?? 1)
+  if (stack < cost + 1) return `需要 ${cost} 張多餘同名卡（目前堆疊 x${stack}）`
+  ch.count -= cost
   ch.boost += 1
   emit()
   return null
@@ -874,12 +883,23 @@ export function equipRelicOnRole(role: Role, relicId: string | undefined): strin
   return null
 }
 
-export function assignWork(charUid: string, job: WorkJob | undefined) {
+export function assignWork(charUid: string, job: WorkJob | undefined): string | null {
   const ch = getOwned(state, charUid)
-  if (!ch) return
-  if (isOnDispatch(ch)) return
+  if (!ch) return '找不到角色'
+  if (isOnDispatch(ch)) return '派遣中無法打工'
+  if (job) {
+    if (fightingUids(state).has(ch.uid)) return '出戰中無法打工'
+    const cap = workStationCap(state.floors.main)
+    if (ch.workJob !== job) {
+      const n = state.roster.filter(
+        (c) => c.workJob === job && !fightingUids(state).has(c.uid) && !isOnDispatch(c),
+      ).length
+      if (n >= cap) return `工位已滿（${cap} 人）`
+    }
+  }
   ch.workJob = job
   emit()
+  return null
 }
 
 export function deployCharacter(charUid: string) {

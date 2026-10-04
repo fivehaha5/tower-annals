@@ -36,6 +36,7 @@ import {
   SHOP_RATES,
   assetUrl,
   charAscendCost,
+  charBoostCardCost,
   charLevelCost,
   charLevelCostRange,
   charRebirthCost,
@@ -80,8 +81,11 @@ import {
 import {
   DISPATCH_OPTIONS,
   WORK_BATCH_SEC,
+  dispatchSlotCap,
   isOnDispatch,
   mainTowerWorkBonus,
+  scaleDispatchReward,
+  workStationCap,
 } from '../game/logistics'
 import { RELIC_MAP, RELICS, relicsUnlockedByRebirth } from '../game/data/relics'
 import { countRebirthBonusCells, roleRebirthBonus } from '../game/mechanics'
@@ -559,6 +563,7 @@ function charCard(state: GameState, ch: OwnedCharacter, opts?: { showDeploy?: bo
   const deployed = fightingUids(state).has(ch.uid)
   const stack = Math.max(1, ch.count ?? 1)
   const ascendCost = charAscendCost(ch.ascend)
+  const boostCost = charBoostCardCost(ch.boost ?? 0)
   const rebirth = ch.rebirth ?? 0
   const maxTier = maxEquipTierForRebirth(rebirth)
   const showDeploy = opts?.showDeploy ?? true
@@ -571,7 +576,7 @@ function charCard(state: GameState, ch: OwnedCharacter, opts?: { showDeploy?: bo
       ${levelButtons(ch)}
       <div class="btn-row" style="margin-top:8px">
         <button class="btn" data-act="ascend" data-id="${ch.uid}">進階(${formatNum(ascendCost)}神魂)</button>
-        <button class="btn" data-act="boost" data-id="${ch.uid}" ${stack < 2 ? 'disabled' : ''}>增效(耗1張同名)</button>
+        <button class="btn" data-act="boost" data-id="${ch.uid}" ${stack < boostCost + 1 ? 'disabled' : ''}>增效(耗${boostCost}張)</button>
         ${showDeploy ? `<button class="btn" data-act="deploy" data-id="${ch.uid}">${deployed ? '已出戰' : '出戰'}</button>` : ''}
       </div>
       <div class="stack-count">x${stack}</div>
@@ -802,6 +807,7 @@ function trainTeamView(state: GameState): string {
   const focus = getRoleCharacter(state, focusRole)
   const stack = focus ? Math.max(1, focus.count ?? 1) : 1
   const ascendCost = focus ? charAscendCost(focus.ascend) : 0
+  const boostCost = focus ? charBoostCardCost(focus.boost ?? 0) : 1
   const rebirth = focus?.rebirth ?? 0
   const maxTier = maxEquipTierForRebirth(rebirth)
   const stats = focus ? calcCharStats(state, focus) : null
@@ -831,7 +837,7 @@ function trainTeamView(state: GameState): string {
       ${levelButtons(focus)}
       <div class="btn-row" style="margin-top:10px">
         <button class="btn" data-act="ascend" data-id="${focus.uid}">進階(${formatNum(ascendCost)}魂)</button>
-        <button class="btn" data-act="boost" data-id="${focus.uid}" ${stack < 2 ? 'disabled' : ''}>增效 x${stack}</button>
+        <button class="btn" data-act="boost" data-id="${focus.uid}" ${stack < boostCost + 1 ? 'disabled' : ''}>增效(耗${boostCost}張)·堆x${stack}</button>
       </div>
       <div class="muted" style="margin-top:8px">更換出戰</div>
       <div class="btn-row" style="margin-top:4px;flex-wrap:wrap">${roleDeployPicker(state, focusRole)}</div>
@@ -1195,12 +1201,14 @@ function logisticsDispatchSection(state: GameState): string {
     (ch) => !fighting.has(ch.uid) && !ch.workJob && !isOnDispatch(ch),
   )
   const active = (state.dispatches ?? []).filter((d) => d.endsAt > Date.now())
+  const cap = dispatchSlotCap(state.floors.main)
+  const full = active.length >= cap
   const open = uiFlag('__foldDispatch')
   return `<div class="panel compact-panel">
     <div class="section-head">
       <div>
         <div class="section-title">遠征派遣</div>
-        <div class="muted">進行中 ${active.length} · 可派 ${available.length}</div>
+        <div class="muted">席位 ${active.length}/${cap} · 可派 ${available.length} · 獎勵隨主塔遞增</div>
       </div>
       ${foldBtn('__foldDispatch', '收起', '展開')}
     </div>
@@ -1217,22 +1225,28 @@ function logisticsDispatchSection(state: GameState): string {
               : ''
           }
     ${
-      available.length
-        ? `<div class="list tight-list" style="margin-top:8px">${available
-            .map((ch) => {
-              const def = CHAR_MAP[ch.defId]
-              return `<div class="row-item">
+      full
+        ? '<div class="muted" style="margin-top:6px">派遣席位已滿</div>'
+        : available.length
+          ? `<div class="list tight-list" style="margin-top:8px">${available
+              .map((ch) => {
+                const def = CHAR_MAP[ch.defId]
+                return `<div class="row-item">
                 <div class="row-main">${nameSpan(def.name, ch.rarity)}</div>
                 <div class="btn-row">
-                  ${DISPATCH_OPTIONS.map(
-                    (o) =>
-                      `<button class="btn" data-act="dispatch" data-id="${ch.uid}" data-hours="${o.hours}">${o.hours}h</button>`,
-                  ).join('')}
+                  ${DISPATCH_OPTIONS.map((o) => {
+                    const scaled = scaleDispatchReward(o.reward, state.floors.main)
+                    const tip = Object.entries(scaled)
+                      .filter(([, v]) => v)
+                      .map(([k, v]) => `${k}:${v}`)
+                      .join(' ')
+                    return `<button class="btn" data-act="dispatch" data-id="${ch.uid}" data-hours="${o.hours}" title="${tip}">${o.hours}h</button>`
+                  }).join('')}
                 </div>
               </div>`
-            })
-            .join('')}</div>`
-        : '<div class="muted" style="margin-top:6px">無可派遣角色</div>'
+              })
+              .join('')}</div>`
+          : '<div class="muted" style="margin-top:6px">無可派遣角色</div>'
     }`
         : ''
     }
@@ -1270,10 +1284,11 @@ function logisticsOrdersSection(state: GameState): string {
 function logisticsStationsView(state: GameState): string {
   const fighting = fightingUids(state)
   const mtBonus = (mainTowerWorkBonus(state.floors.main) * 100).toFixed(0)
+  const stationCap = workStationCap(state.floors.main)
   return `
     <div class="panel compact-panel">
       <div class="section-title">後勤工位</div>
-      <div class="muted">每 ${WORK_BATCH_SEC} 秒一批 · 主塔 +${mtBonus}% · 戰熔鍛／法書／牧魂 +25%</div>
+      <div class="muted">每工位最多 ${stationCap} 人 · 每 ${WORK_BATCH_SEC} 秒一批 · 主塔 +${mtBonus}% · 戰熔鍛／法書／牧魂 +25%</div>
     </div>
     <div class="station-grid">
       ${WORK_JOBS.map((job) => {
@@ -1289,7 +1304,7 @@ function logisticsStationsView(state: GameState): string {
         return `<button class="station-card tap-target" data-act="logistics-open" data-job="${job}">
           <div class="station-head">
             <div class="station-title">${WORK_LABEL[job]} ${specTag}</div>
-            <div class="station-count">${workers.length}</div>
+            <div class="station-count">${workers.length}/${stationCap}</div>
           </div>
           <div class="station-portraits">
             ${
@@ -1318,8 +1333,10 @@ function logisticsStationsView(state: GameState): string {
 
 function logisticsDetailView(state: GameState, job: WorkJob): string {
   const fighting = fightingUids(state)
+  const stationCap = workStationCap(state.floors.main)
   const workers = state.roster.filter((ch) => ch.workJob === job && !fighting.has(ch.uid))
   const available = state.roster.filter((ch) => !fighting.has(ch.uid) && ch.workJob !== job)
+  const full = workers.length >= stationCap
   const resKey = WORK_RES_KEY[job]
   const resMeta = RESOURCE_META.find((m) => m.key === resKey)
 
@@ -1328,7 +1345,7 @@ function logisticsDetailView(state: GameState, job: WorkJob): string {
       <button class="btn tap-target" data-act="logistics-back" style="width:100%;margin-bottom:10px">← 返回工位列表</button>
       <div class="section-title">${WORK_LABEL[job]}工位</div>
       <p class="muted">${WORK_DESC[job]} · ${resMeta?.name ?? ''} 庫存 ${formatNum(state.resources[resKey])}</p>
-      <p class="muted">在職員工 ${workers.length} 人</p>
+      <p class="muted">在職 ${workers.length}/${stationCap} · 超出人數不產物（依增效／等級優先）</p>
     </div>
     <div class="panel">
       <div class="section-title">在職員工</div>
@@ -1367,7 +1384,7 @@ function logisticsDetailView(state: GameState, job: WorkJob): string {
                     <div class="title">${nameSpan(def.name, ch.rarity)} · Lv.${ch.level}</div>
                     <div class="sub">${ROLE_LABEL[def.role]} · ${elsewhere} · 增效${ch.boost}</div>
                     <div class="btn-row" style="margin-top:6px">
-                      <button class="btn primary tap-target" data-act="work" data-id="${ch.uid}" data-job="${job}">加入工位</button>
+                      <button class="btn primary tap-target" data-act="work" data-id="${ch.uid}" data-job="${job}" ${full ? 'disabled' : ''}>${full ? '工位已滿' : '加入工位'}</button>
                     </div>
                     <div class="stack-count">x${Math.max(1, ch.count ?? 1)}</div>
                   </div>
@@ -1464,9 +1481,10 @@ function gameGuideModal(): string {
       <p><strong>職業編隊</strong>：戰士、法師、牧師各有獨立 loadout——出戰角色、七部位裝備、三技能格、遺物。換角色不改裝備配置。</p>
       <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），品質依機率；強化只加等級，不能事後升品。</p>
       <p><strong>技能</strong>：商店普通／稀有；更高階靠升階或王塔／神王獨特技，升階耗同名卡。</p>
-      <p><strong>後勤</strong>：每 ${WORK_BATCH_SEC} 秒結算產量；主塔每 100 層 +4% 全工種（上限 80%）。含裝備打造、訂單、派遣。</p>
-      <p><strong>派遣</strong>：非出戰、非打工角色可遠征，依時數領藍圖／技能書等。</p>
-      <p><strong>訂單</strong>：交付指定資源換獎勵，完成後短時間刷新。</p>
+      <p><strong>後勤</strong>：每工位最多 ${workStationCap(1)} 人（主塔每 1000 層 +1，上限 6）；每 ${WORK_BATCH_SEC} 秒一批；主塔每 100 層 +4%（上限 80%）。含打造、訂單、派遣。</p>
+      <p><strong>養成消耗</strong>：進階神魂、增效同名卡、技能精華、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。</p>
+      <p><strong>派遣</strong>：席位有上限；獎勵隨主塔層遞增。非出戰、非打工角色可遠征。</p>
+      <p><strong>訂單</strong>：需求與獎勵隨主塔層遞增，完成後短時間刷新。</p>
       <p><strong>遺物</strong>：依出戰角色轉生解鎖，裝在職業格上。</p>
       <p><strong>編年加成</strong>：各職質數轉生門檻達 3／6／9 人點亮格子，提升該職戰力。</p>
       <p><strong>離線</strong>：切走分頁、重開、或前景一次落後達 ${formatDuration(FOREGROUND_OFFLINE_THRESHOLD_SEC)} 會走離線結算；最多 ${formatDuration(OFFLINE_CAP_SEC)}，超過上限會顯示實際離線時間。</p>
@@ -2205,7 +2223,8 @@ function bind(root: HTMLElement) {
         actions.setTab('logistics')
       }
       if (act === 'work' && id) {
-        actions.assignWork(id, (el as HTMLElement).dataset.job as WorkJob | undefined)
+        const err = actions.assignWork(id, (el as HTMLElement).dataset.job as WorkJob | undefined)
+        if (err) toast(root, err)
       }
       if (act === 'gacha') {
         const times = Number((el as HTMLElement).dataset.times ?? 1) as 1 | 10 | 100
