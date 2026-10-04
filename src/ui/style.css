@@ -335,6 +335,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
+  position: relative;
+}
+
+.skill .cd-badge {
+  font-size: 9px;
+  color: #ffb454;
+  letter-spacing: 0.02em;
+  min-width: 0;
+}
+
+.skill .cd-badge:empty {
+  display: none;
+}
+
+.skill.on-cd {
+  opacity: 0.55;
+  filter: grayscale(0.35);
 }
 
 .nav {

@@ -96,3 +96,15 @@ export const SKILL_LEVEL_SCALE = 0.11
 
 /** 獨特技能額外倍率 */
 export const UNIQUE_SKILL_BONUS = 1.18
+
+/**
+ * 單次出手只施放一個技能後，該技能種類冷卻（以該角色出手次數計）。
+ * 1 = 下一次該角色出手不可再用同一種類，促進輪替、避免連打同一招。
+ */
+export const SKILL_KIND_COOLDOWN_TURNS = 1
+
+/** 單技能出手補償（舊版同 tick 可疊三招，改為一招後略抬倍率） */
+export const SINGLE_SKILL_FOCUS = 1.18
+
+/** 技能皆在冷卻／未裝備時的普攻威力係數 */
+export const BASIC_ATTACK_POWER = 0.7

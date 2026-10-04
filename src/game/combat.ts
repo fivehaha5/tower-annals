@@ -33,7 +33,14 @@ import {
   scaleStats,
   type LootCost,
 } from './util'
-import { EQUIP_LEVEL_SCALE, SKILL_LEVEL_SCALE, UNIQUE_SKILL_BONUS } from './balance'
+import {
+  BASIC_ATTACK_POWER,
+  EQUIP_LEVEL_SCALE,
+  SINGLE_SKILL_FOCUS,
+  SKILL_KIND_COOLDOWN_TURNS,
+  SKILL_LEVEL_SCALE,
+  UNIQUE_SKILL_BONUS,
+} from './balance'
 
 const ROLES: Role[] = ['warrior', 'mage', 'priest']
 
@@ -180,6 +187,7 @@ export function createBattle(state: GameState): BattleSnapshot {
     actIndex: 0,
     roundDmgToEnemy: 0,
     floaters: [],
+    skillCds: {},
   }
 }
 
@@ -211,7 +219,7 @@ function hasEffect(skillId: string, id: string): number {
 
 /**
  * 戰鬥節拍：每 tick 僅一名隊員依陣型左→右出手；三人皆出手後敵方攻擊一次。
- * （舊版為三職+敵同 tick，現改為可讀的序貫出手；清關節奏約變慢為每輪 4 tick。）
+ * 隊員出手時只施放一個就緒技能（依施法優先序）；同種類有短冷卻，全在 CD 則普攻。
  */
 export function battleTick(state: GameState): {
   cleared: boolean
@@ -273,15 +281,60 @@ export function battleTick(state: GameState): {
   return { cleared: false, resources: {}, loot: {}, lootCost: emptyLootCost() }
 }
 
+const SKILL_KINDS: SkillKind[] = ['attack', 'defense', 'support']
+
+function roleSkillCds(
+  b: BattleSnapshot,
+  role: Role,
+): Partial<Record<SkillKind, number>> {
+  b.skillCds ??= {}
+  b.skillCds[role] ??= {}
+  return b.skillCds[role]!
+}
+
+/** 推進該角色其餘技能冷卻（剛施放的種類本回合不扣） */
+function advanceRoleSkillCds(
+  cds: Partial<Record<SkillKind, number>>,
+  justCast?: SkillKind,
+) {
+  for (const kind of SKILL_KINDS) {
+    if (kind === justCast) continue
+    const left = cds[kind] ?? 0
+    if (left <= 0) {
+      delete cds[kind]
+      continue
+    }
+    const next = left - 1
+    if (next <= 0) delete cds[kind]
+    else cds[kind] = next
+  }
+}
+
+function pickReadySkill(
+  state: GameState,
+  role: Role,
+  cds: Partial<Record<SkillKind, number>>,
+): { kind: SkillKind; owned: OwnedSkill } | undefined {
+  const castOrder = state.skillCastOrder?.length
+    ? state.skillCastOrder
+    : defaultSkillCastOrder()
+  for (const kind of castOrder) {
+    if ((cds[kind] ?? 0) > 0) continue
+    const owned = getEquippedSkill(state, role, kind)
+    if (!owned || !SKILL_MAP[owned.skillId]) continue
+    return { kind, owned }
+  }
+  return undefined
+}
+
 function resolvePartyAction(
   state: GameState,
   b: BattleSnapshot,
   entry: { role: Role; ch: OwnedCharacter },
 ) {
   const { role, ch } = entry
-  const castOrder = state.skillCastOrder?.length
-    ? state.skillCastOrder
-    : defaultSkillCastOrder()
+  const cds = roleSkillCds(b, role)
+  const picked = pickReadySkill(state, role, cds)
 
   let dealt = 0
   let healed = 0
@@ -294,6 +347,7 @@ function resolvePartyAction(
   let shieldLeech = 0
   let pierce = 0
   let mirror = 0
+  let actionLabel = '普攻'
 
   const stats = calcCharStats(state, ch)
   const relic = relicEffects(state, role)
@@ -306,11 +360,11 @@ function resolvePartyAction(
     healed += stats.atk * 0.05 * relic.heal
   }
 
-  for (const kind of castOrder) {
-    const owned = getEquippedSkill(state, role, kind)
-    const skill = owned ? SKILL_MAP[owned.skillId] : undefined
-    if (!skill) continue
-    const str = skillStrength(owned) * skillPow
+  if (picked) {
+    const { kind, owned } = picked
+    const skill = SKILL_MAP[owned.skillId]!
+    actionLabel = skill.name
+    const str = skillStrength(owned) * skillPow * SINGLE_SKILL_FOCUS
     let mult = elementMult(skill.element as Element, b.enemy.element)
     if (hasEffect(skill.id, 'fogBreak')) fogBreak = true
     if (hasEffect(skill.id, 'trueDamage')) {
@@ -352,7 +406,15 @@ function resolvePartyAction(
     if (hasEffect(skill.id, 'gateBreak') && b.enemy.gateCharges) {
       b.enemy.gateCharges = Math.max(0, (b.enemy.gateCharges ?? 0) - 1)
     }
+    cds[kind] = SKILL_KIND_COOLDOWN_TURNS
+  } else {
+    // 就緒技能皆在冷卻或未裝備 → 普攻，戰鬥仍前進
+    const el = CHAR_MAP[ch.defId]?.element ?? '光'
+    const mult = elementMult(el, b.enemy.element)
+    dealt += stats.atk * BASIC_ATTACK_POWER * mult
   }
+
+  advanceRoleSkillCds(cds, picked?.kind)
 
   if (mirror > 0) {
     const m = 1 + mirror * 0.35
@@ -405,7 +467,7 @@ function resolvePartyAction(
   b.floaters = floaters
   if (floaters.length > 0) b.floaterSeq = (b.floaterSeq ?? 0) + 1
 
-  const bits: string[] = [`${ROLE_LABEL[role]}出手`]
+  const bits: string[] = [`${ROLE_LABEL[role]}·${actionLabel}`]
   if (dmgToEnemy > 0) bits.push(`造成 ${dmgToEnemy}`)
   if (healAmt > 0) bits.push(`治療 ${healAmt}`)
   if (shAdd > 0) bits.push(`護盾 +${shAdd}`)

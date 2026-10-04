@@ -255,6 +255,19 @@ function patchLiveHud(root: HTMLElement, state: GameState) {
   }
   const logEl = root.querySelector('[data-battle-log]') as HTMLElement | null
   if (logEl) logEl.textContent = b.log || '準備戰鬥…'
+
+  // 出戰技能冷卻：只改文字／class，不重繪立繪
+  root.querySelectorAll<HTMLElement>('[data-skill-cd]').forEach((el) => {
+    const role = el.dataset.role as Role | undefined
+    const kind = el.dataset.kind as SkillKind | undefined
+    if (!role || !kind) return
+    const cd = b.skillCds?.[role]?.[kind] ?? 0
+    const onCd = cd > 0
+    el.classList.toggle('on-cd', onCd)
+    const badge = el.querySelector('[data-cd-badge]') as HTMLElement | null
+    if (badge) badge.textContent = onCd ? `CD${cd}` : ''
+  })
+
   spawnBattleFloaters(root, state)
 }
 
@@ -520,7 +533,9 @@ function towerView(state: GameState): string {
               <div class="skills" style="grid-template-columns:1fr">${KINDS.map((kind) => {
                 const s = getEquippedSkill(state, role, kind)
                 const sd = s ? SKILL_MAP[s.skillId] : undefined
-                return `<div class="skill" style="border-color:${RARITY_COLOR[s?.rarity ?? '普通']}">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '—'}${s ? ` Lv.${s.level}` : ''}</div>`
+                const cd = b?.skillCds?.[role]?.[kind] ?? 0
+                const onCd = cd > 0
+                return `<div class="skill${onCd ? ' on-cd' : ''}" data-skill-cd data-role="${role}" data-kind="${kind}" style="border-color:${RARITY_COLOR[s?.rarity ?? '普通']}">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '—'}${s ? ` Lv.${s.level}` : ''}<span class="cd-badge" data-cd-badge>${onCd ? `CD${cd}` : ''}</span></div>`
               }).join('')}</div>
             </div>`
           })
@@ -814,7 +829,7 @@ function skillCastOrderPanel(state: GameState): string {
   const open = uiFlag('__foldCast')
   return `<div class="panel compact-panel">
     <div class="section-head">
-      <div class="section-title">施法：${order.map((k) => SKILL_KIND_LABEL[k]).join('→')}</div>
+      <div class="section-title">施法優先（每次出手一招）：${order.map((k) => SKILL_KIND_LABEL[k]).join('→')}</div>
       ${foldBtn('__foldCast', '收起', '調整')}
     </div>
     ${

@@ -268,6 +268,11 @@ export interface BattleSnapshot {
   floaters?: BattleFloater[]
   /** 遞增序號，供 UI 觸發動畫 */
   floaterSeq?: number
+  /**
+   * 各職技能種類剩餘冷卻（以該角色出手次數計）。
+   * 缺省／0 = 就緒；戰鬥新建時清空，不影響存檔結構。
+   */
+  skillCds?: Partial<Record<Role, Partial<Record<SkillKind, number>>>>
 }
 
 export interface LootDrop {
