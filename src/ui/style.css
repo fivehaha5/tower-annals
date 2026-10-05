@@ -843,6 +843,11 @@ body {
   font-size: 12px;
 }
 
+.berserk-hot {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .boot,
 .starter {
   height: 100%;
