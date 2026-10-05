@@ -96,7 +96,7 @@ import {
 import { RELIC_MAP, RELICS, relicsUnlockedByRebirth } from '../game/data/relics'
 import { countRebirthBonusCells, roleRebirthBonus } from '../game/mechanics'
 import { APP_VERSION, checkAppUpdate, warmImageCache } from '../appUpdate'
-import { ANTI_KING_EXCHANGE_COST, FRONTIER_PUSH_MULT, SKILL_DUNGEON_COOLDOWN_SEC, SKILL_DUNGEON_UNLOCK } from '../game/balance'
+import { ANTI_KING_EXCHANGE_COST, BERSERK_AFTER_ROUNDS, FRONTIER_PUSH_MULT, SKILL_DUNGEON_COOLDOWN_SEC, SKILL_DUNGEON_UNLOCK } from '../game/balance'
 
 const MODE_LABEL: Record<IdleMode, string> = {
   main: '主塔',
@@ -268,6 +268,16 @@ function patchLiveHud(root: HTMLElement, state: GameState) {
   }
   const logEl = root.querySelector('[data-battle-log]') as HTMLElement | null
   if (logEl) logEl.textContent = b.log || '準備戰鬥…'
+
+  const roundEl = root.querySelector('[data-battle-round]') as HTMLElement | null
+  if (roundEl) {
+    const round = (b.roundsElapsed ?? 0) + 1
+    const berserk = !!b.berserk
+    roundEl.textContent = berserk
+      ? `回合 ${round} · 暴走中`
+      : `回合 ${round} · 暴走≥${BERSERK_AFTER_ROUNDS}`
+    roundEl.classList.toggle('berserk-hot', berserk)
+  }
 
   // 出戰技能冷卻：只改文字／class，不重繪立繪
   root.querySelectorAll<HTMLElement>('[data-skill-cd]').forEach((el) => {
@@ -584,6 +594,7 @@ function towerView(state: GameState): string {
       <div class="boss-stage-meta">
         <div class="enemy-name">${enemyName}</div>
         <div class="muted">${b?.enemy.element ?? '-'} · 戰力 ${formatNum(b?.enemy.power ?? 0)} · ${formatNum(floor)}/${formatNum(maxFloor)}F</div>
+        <div class="muted${b?.berserk ? ' berserk-hot' : ''}" data-battle-round>${b?.berserk ? `回合 ${(b.roundsElapsed ?? 0) + 1} · 暴走中` : `回合 ${(b?.roundsElapsed ?? 0) + 1} · 暴走≥${BERSERK_AFTER_ROUNDS}`}</div>
         <div class="muted" data-battle-log>${b?.log ?? '準備戰鬥…'}</div>
         <div class="bar shield" data-bar="enemy-shield" data-pct="${pctNum(b?.enemy.shield ?? 0, b?.enemy.maxShield ?? 1).toFixed(1)}"><i></i></div>
         <div class="bar enemy" data-bar="enemy-hp" data-pct="${pctNum(b?.enemy.hp ?? 0, b?.enemy.maxHp ?? 1).toFixed(1)}"><i></i></div>
@@ -602,6 +613,7 @@ function towerView(state: GameState): string {
         <div class="battle-enemy-meta">
           <div class="enemy-name">${enemyName}</div>
           <div class="muted">${b?.enemy.element ?? '-'} · 戰力 ${formatNum(b?.enemy.power ?? 0)} · ${formatNum(floor)}/${formatNum(maxFloor)}F</div>
+          <div class="muted${b?.berserk ? ' berserk-hot' : ''}" data-battle-round>${b?.berserk ? `回合 ${(b.roundsElapsed ?? 0) + 1} · 暴走中` : `回合 ${(b?.roundsElapsed ?? 0) + 1} · 暴走≥${BERSERK_AFTER_ROUNDS}`}</div>
           <div class="muted" data-battle-log>${b?.log ?? '準備戰鬥…'}</div>
           <div class="bar shield" data-bar="enemy-shield" data-pct="${pctNum(b?.enemy.shield ?? 0, b?.enemy.maxShield ?? 1).toFixed(1)}"><i></i></div>
           <div class="bar enemy" data-bar="enemy-hp" data-pct="${pctNum(b?.enemy.hp ?? 0, b?.enemy.maxHp ?? 1).toFixed(1)}"><i></i></div>
