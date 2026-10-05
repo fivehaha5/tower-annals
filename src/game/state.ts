@@ -29,7 +29,9 @@ import {
 import {
   ANTI_KING_EXCHANGE_COST,
   SKILL_CARD_STARTER_CUSHION,
+  SKILL_DUNGEON_COOLDOWN_SEC,
   SKILL_DUNGEON_UNLOCK,
+  skillDungeonBookDrops,
 } from './balance'
 import {
   DISPATCH_OPTIONS,
@@ -145,7 +147,7 @@ function createOwned(defId: string): OwnedCharacter {
 }
 
 function pushSkillItem(skillId: string, rarity: Rarity, level = 1): OwnedSkill {
-  const item: OwnedSkill = { uid: uid('sk'), skillId, level, rarity }
+  const item: OwnedSkill = { uid: uid('sk'), skillId, level, rarity, books: 0 }
   state.skillItems.push(item)
   return item
 }
@@ -236,6 +238,7 @@ export function createNewState(): GameState {
     firstWin: { boss: false, godking: false },
     antiKingIntroDone: false,
     pendingAntiKingPick: false,
+    skillDungeonCdLeft: 0,
     dropSettings: {
       boss: { aim: 'none' },
       godking: { aim: 'none' },
@@ -317,6 +320,27 @@ export function normalizeState(s: GameState): GameState {
   const ownedAnti = s.skillItems.some((sk) => SKILL_MAP[sk.skillId]?.source === 'antiKing')
   s.antiKingIntroDone = s.antiKingIntroDone === true || ownedAnti
   s.pendingAntiKingPick = s.antiKingIntroDone ? false : !!s.pendingAntiKingPick
+  s.skillDungeonCdLeft = Math.max(0, Math.floor(s.skillDungeonCdLeft ?? 0))
+  for (const sk of s.skillItems) {
+    sk.books = Math.max(0, Math.floor(sk.books ?? 0))
+  }
+
+  // v5→v6：升階改吃同名技能本；將一半通用技能卡轉成已持有技能的同名本
+  if (fromVersion < 6) {
+    const pool = s.skillItems
+    let cards = Math.max(0, Math.floor(s.resources.skillbook ?? 0))
+    const convert = Math.floor(cards * 0.5)
+    cards -= convert
+    if (pool.length && convert > 0) {
+      for (let i = 0; i < convert; i++) {
+        const sk = pool[i % pool.length]!
+        sk.books = (sk.books ?? 0) + 1
+      }
+    }
+    s.resources.skillbook = cards
+    s.skillDungeonCdLeft = 0
+  }
+
   if (s.idleMode === ('hunt' as IdleMode) && !canUnlockHuntFrom(s)) {
     s.idleMode = 'main'
   }
@@ -688,6 +712,15 @@ export function simulateTicks(ticks: number, recordOffline = false, rawSeconds?:
   for (let i = 0; i < ticks; i++) {
     // 待選克制技能時暫停爬塔，後勤仍結算
     if (state.pendingAntiKingPick) continue
+    // 技能本冷卻：倒數期間不開打
+    if (state.idleMode === 'skill' && (state.skillDungeonCdLeft ?? 0) > 0) {
+      state.skillDungeonCdLeft = Math.max(0, (state.skillDungeonCdLeft ?? 0) - 1)
+      if (state.battle) {
+        state.battle.log = `技能本冷卻中 · 剩餘 ${state.skillDungeonCdLeft}s`
+        state.battle.floaters = []
+      }
+      continue
+    }
     const result = battleTick(state)
     gains = addResources(gains, result.resources)
     if (result.cleared) {
@@ -703,6 +736,12 @@ export function simulateTicks(ticks: number, recordOffline = false, rawSeconds?:
       if (result.loot.characterId || result.loot.skillId) {
         drops.push(result.loot)
         applyLoot(result.loot, msgs)
+      }
+      if (mode === 'skill') {
+        const farm = state.farmFloor.skill ?? state.floors.skill
+        const summary = grantSkillDungeonBooks(farm)
+        msgs.push(summary)
+        state.pendingToast = summary
       }
       if (mode === 'boss' || mode === 'godking') {
         const wasFirst = !state.firstWin[mode]
@@ -864,18 +903,45 @@ export function upgradeSkill(skillUid: string): string | null {
   return null
 }
 
-/** 技能升階（稀有度）；耗技能卡。providerCharUid 僅相容舊 UI，不再消耗同名卡。 */
+/** 技能升階（稀有度）；耗該技能的同名技能本。 */
 export function ascendSkill(skillUid: string, _providerCharUid?: string): string | null {
   const sk = getSkillItem(state, skillUid)
   if (!sk) return '找不到技能'
   const next = nextRarity(sk.rarity)
   if (!next) return '技能已滿階'
   const cost = skillAscendCost(sk.rarity)
-  if (state.resources.skillbook < cost) return '技能卡不足'
-  state.resources.skillbook -= cost
+  const books = sk.books ?? 0
+  if (books < cost) return '同名技能本不足'
+  sk.books = books - cost
   sk.rarity = next
   emit()
   return null
+}
+
+/**
+ * 技能本通關：產出數本同名技能本，隨機分給已持有技能，並進入冷卻。
+ * 回傳摘要字串供 toast。
+ */
+export function grantSkillDungeonBooks(floor: number): string {
+  const n = skillDungeonBookDrops(floor)
+  const items = state.skillItems
+  state.skillDungeonCdLeft = SKILL_DUNGEON_COOLDOWN_SEC
+  if (!items.length) {
+    return `技能本通關，但尚無技能可分配（冷卻 ${SKILL_DUNGEON_COOLDOWN_SEC}s）`
+  }
+  const gained = new Map<string, number>()
+  for (let i = 0; i < n; i++) {
+    const sk = items[Math.floor(Math.random() * items.length)]!
+    sk.books = (sk.books ?? 0) + 1
+    gained.set(sk.uid, (gained.get(sk.uid) ?? 0) + 1)
+  }
+  const parts: string[] = []
+  for (const [uid, amt] of gained) {
+    const sk = getSkillItem(state, uid)
+    const name = sk ? SKILL_MAP[sk.skillId]?.name ?? '?' : '?'
+    parts.push(`${name}+${amt}`)
+  }
+  return `技能本 ×${n}（${parts.slice(0, 4).join('、')}${parts.length > 4 ? '…' : ''}）· 冷卻 ${SKILL_DUNGEON_COOLDOWN_SEC}s`
 }
 
 /** 技能裝到職業出戰格 */

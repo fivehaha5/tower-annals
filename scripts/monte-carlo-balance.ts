@@ -106,7 +106,7 @@ function trySpendSkillGrowth() {
             continue
           }
         }
-        if (nextRarity(sk.rarity) && s.resources.skillbook >= skillAscendCost(sk.rarity)) {
+        if (nextRarity(sk.rarity) && (sk.books ?? 0) >= skillAscendCost(sk.rarity)) {
           const err = ascendSkill(uid)
           if (!err) progressed = true
         }

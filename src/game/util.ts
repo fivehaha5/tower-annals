@@ -19,7 +19,7 @@ export const GAME_NAME = '異塔編年'
 /** 作廢舊存檔：換 key */
 export const SAVE_KEY = 'tower-annals-save-v3'
 /** v5：破王徽／討伐訓練／克制王階正式獲取；可由 v3～v4 遷移 */
-export const SAVE_VERSION = 5
+export const SAVE_VERSION = 6
 export const GODKING_UNLOCK = 10000
 export const TICK_MS = 1000
 /** 定向掉落基礎水晶（再 × 輪迴） */
@@ -286,15 +286,16 @@ export function skillUpgradeCost(level: number): number {
 }
 
 /**
- * 技能升階：技能卡。
- * 由目前稀有度 → 下一階，耗 nthPrime(rank)×100；rank＝稀有度序（普通=1…）。
+ * 技能升階：同名技能本。
+ * 由目前稀有度 → 下一階，耗 nthPrime(rank)×8；rank＝稀有度序（普通=1…）。
+ * （改為同名本後數量變稀，倍率低於舊通用卡 ×100。）
  */
 export function skillAscendCost(rarity: Rarity): number {
   const rank = Math.max(1, rarityIndex(rarity) + 1)
-  return nthPrime(rank) * 100
+  return nthPrime(rank) * 8
 }
 
-/** @deprecated 改用 skillAscendCost（技能卡）；保留別名避免外部殘留引用 */
+/** @deprecated 改用 skillAscendCost；保留別名避免外部殘留引用 */
 export function skillAscendCardCost(rarity: Rarity): number {
   return skillAscendCost(rarity)
 }

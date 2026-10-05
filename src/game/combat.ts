@@ -610,9 +610,8 @@ export function clearRewards(state: GameState): Partial<Resources> {
     }
   }
   if (state.idleMode === 'skill') {
-    const mini = floor % 5 === 0
+    // 同名技能本由 grantSkillDungeonBooks 發放；此處僅附帶資源
     return {
-      skillbook: Math.floor(12 + floor * 1.35) + (mini ? Math.floor(18 + floor * 0.6) : 0),
       crystal: Math.max(1, Math.floor(mainCrystalBase * 0.28)),
       essence: Math.max(0, Math.floor(2 + floor * 0.12)),
     }

@@ -11,8 +11,9 @@
  * ## 養成循環
  * 升級（水晶，上限 100）→ 滿級轉生（高額水晶+金鑽，Lv 回 1，轉生+1；戰力 +20%/次）
  * → 進階（神魂）／增效（同名卡，前期弱、後期漸強）
- * → 技能升級（法術精華，小幅遞增）／技能升階（技能卡＝質數×100，稀有度大斷點）
+ * → 技能升級（法術精華，小幅遞增）／技能升階（同名技能本＝質數×8；技能本副本掉落）
  * → 裝備強化（熔鍛+金鑽）；戰敗扣水晶／金鑽
+ * 通用「技能卡」仍用於王塔定向／克制兌換／後勤，不直接升階。
  *
  * ## 戰鬥節奏（現行）
  * - 每 tick 一名隊員左→右出手；三人後敵方一擊＝1 完整回合
@@ -145,6 +146,29 @@ export const ENEMY_SHIELD_FROM_POWER = 0.24
 
 /** 技能本解鎖所需主塔層數 */
 export const SKILL_DUNGEON_UNLOCK = 25
+
+/** 技能本通關後冷卻（秒） */
+export const SKILL_DUNGEON_COOLDOWN_SEC = 10
+
+/**
+ * 技能本每層掉落同名技能本數量（隨機分給已持有技能）。
+ * 一層一次；小首領略多。
+ */
+export function skillDungeonBookDrops(floor: number): number {
+  const f = Math.max(1, floor)
+  const mini = f % 5 === 0
+  return 3 + Math.floor(f * 0.35) + (mini ? 2 : 0)
+}
+
+/**
+ * 技能本敵方難度種子：相對主塔指數成長（舊版 ≈ 主塔×14 層過平）。
+ * 第 1 層約主塔 25；之後每層 ×1.72。
+ */
+export function skillDungeonPowerSeed(floor: number): number {
+  const f = Math.max(1, floor)
+  const base = mainEnemyPower(25)
+  return Math.floor(base * Math.pow(1.72, f - 1))
+}
 
 /**
  * 討伐訓練（刷破王徽）：王塔無主塔層門檻，故以「首通王塔／神王」解鎖。

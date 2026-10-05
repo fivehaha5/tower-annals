@@ -7,6 +7,7 @@ import {
   bossEnemyPower,
   godkingEnemyPower,
   mainEnemyPower,
+  skillDungeonPowerSeed,
 } from './balance'
 import { BOSS_MECHANIC_BY_CHAR } from './mechanics'
 import { portraitPath } from './util'
@@ -117,7 +118,7 @@ export function enemyPortrait(mode: IdleMode, floor: number): string | undefined
  * 目標戰力對齊 balance.ts 里程碑：
  * - 主塔：前期可推進，中後期吃轉生／裝備階
  * - 副塔：一層 ≈ 主塔 ×100 層
- * - 技能本：一層 ≈ 主塔 ×14 層（刷技能卡）
+ * - 技能本：每層指數加難，掉同名技能本（非通用技能卡）
  * - 討伐訓練：一層 ≈ 主塔 ×16 層（刷破王徽；非 isBoss，不觸發克制王階）
  * - 王塔／神王：獨立指數軸
  */
@@ -127,9 +128,9 @@ export function enemyTargetPower(mode: IdleMode, floor: number): number {
   if (mode === 'boss') return bossEnemyPower(f)
   if (mode === 'godking') return godkingEnemyPower(f)
   if (mode === 'blueprint') return enemyTargetPower('main', f * 100)
-  // 技能本：約主塔 ×14 層難度，主塔 25 解鎖後可穩刷低層技能卡
-  if (mode === 'skill') return enemyTargetPower('main', Math.max(8, f * 14))
-  // 討伐訓練：略高於技能本，首通王階後掛刷破王徽
+  // 技能本：陡峭指數（見 skillDungeonPowerSeed）
+  if (mode === 'skill') return skillDungeonPowerSeed(f)
+  // 討伐訓練：略高於舊技能本倍率，首通王階後掛刷破王徽
   if (mode === 'hunt') return enemyTargetPower('main', Math.max(12, f * 16))
   return mainEnemyPower(f)
 }

@@ -121,6 +121,8 @@ export interface OwnedSkill {
   skillId: string
   level: number
   rarity: Rarity
+  /** 同名技能本數量（技能本掉落／升階消耗；不與通用技能卡互通） */
+  books?: number
 }
 
 export type EquipSlot =
@@ -367,6 +369,11 @@ export interface GameState {
    */
   antiKingIntroDone?: boolean
   pendingAntiKingPick?: boolean
+  /**
+   * 技能本冷卻剩餘秒數（通關後開始；倒數期間不開下一場）。
+   * 離線 tick 同步扣減。
+   */
+  skillDungeonCdLeft?: number
   dropSettings: {
     boss: DropSettings
     godking: DropSettings
