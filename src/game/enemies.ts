@@ -1,4 +1,4 @@
-import type { Element, EnemySnapshot, IdleMode } from './types'
+import type { Element, EnemySnapshot, IdleMode, Stats } from './types'
 import { BOSS_CHARACTERS, GODKING_CHARACTERS } from './data/characters'
 import {
   ENEMY_ATK_FROM_POWER,
@@ -11,6 +11,18 @@ import {
 } from './balance'
 import { BOSS_MECHANIC_BY_CHAR } from './mechanics'
 import { portraitPath } from './util'
+
+/** 與隊伍戰力同一套加權；敵方以攻推估等效防 */
+export function enemyDisplayPower(stats: Pick<Stats, 'hp' | 'shield' | 'atk'> & { def?: number }): number {
+  const def = stats.def ?? Math.floor(stats.atk * 0.45)
+  return Math.floor(stats.hp * 0.3 + stats.shield * 0.25 + stats.atk * 8 + def * 4)
+}
+
+/** 高難度種子額外生命（log soft），讓數字高的怪真的更肉 */
+function hpScaleForSeed(seed: number): number {
+  const s = Math.max(1, seed)
+  return 1 + Math.log10(1 + s / 25_000) * 0.55
+}
 
 const NORMAL_NAMES = [
   '塔層巡邏機',
@@ -136,13 +148,14 @@ export function enemyTargetPower(mode: IdleMode, floor: number): number {
 }
 
 function statsFromPower(
-  power: number,
+  seed: number,
   opts: { boss: boolean; mini: boolean },
 ): Pick<EnemySnapshot, 'hp' | 'maxHp' | 'shield' | 'maxShield' | 'atk' | 'power'> {
   const shieldMult = opts.boss ? 2.2 : opts.mini ? 1.55 : 1
-  const hp = Math.max(1, Math.floor(power * ENEMY_HP_FROM_POWER))
-  const shield = Math.max(0, Math.floor(power * ENEMY_SHIELD_FROM_POWER * shieldMult))
-  const atk = Math.max(1, Math.floor(power * ENEMY_ATK_FROM_POWER))
+  const hp = Math.max(1, Math.floor(seed * ENEMY_HP_FROM_POWER * hpScaleForSeed(seed)))
+  const shield = Math.max(0, Math.floor(seed * ENEMY_SHIELD_FROM_POWER * shieldMult))
+  const atk = Math.max(1, Math.floor(seed * ENEMY_ATK_FROM_POWER))
+  const power = enemyDisplayPower({ hp, shield, atk })
   return {
     hp,
     maxHp: hp,

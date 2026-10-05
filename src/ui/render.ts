@@ -25,7 +25,7 @@ import {
   teamPower,
   workBoostMult,
 } from '../game/combat'
-import { allMobPortraitUrls, enemyTargetPower } from '../game/enemies'
+import { allMobPortraitUrls, buildEnemy } from '../game/enemies'
 import {
   GAME_NAME,
   GODKING_UNLOCK,
@@ -426,7 +426,7 @@ function floorSelectPanel(state: GameState): string {
     <div class="section-head">
       <div>
         <div class="section-title">掛機 · ${formatNum(farm)}F · ${push === 'push' ? '沖層' : '原地'}</div>
-        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(enemyTargetPower(mode, farm))}${huntHint}${skillCd}${berserking ? ' · 暴走中' : ''}</div>
+        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(buildEnemy(mode, farm).power)}${huntHint}${skillCd}${berserking ? ' · 暴走中' : ''}</div>
       </div>
       ${foldBtn('__foldFarm', '收起設定', '展開設定')}
     </div>
@@ -537,7 +537,7 @@ function towerView(state: GameState): string {
           })
           .join('')}
       </div>
-      <div class="muted" style="margin-top:6px">隊伍戰力 ${formatNum(teamPower(state))}</div>
+      <div class="muted" style="margin-top:6px">隊伍戰力 ${formatNum(teamPower(state))}（含出戰技能）</div>
       <div class="bar shield" data-bar="team-shield" data-pct="${pctNum(b?.teamShield ?? 0, b?.teamMaxShield ?? 1).toFixed(1)}"><i></i></div>
       <div class="bar team" data-bar="team-hp" data-pct="${pctNum(b?.teamHp ?? 0, b?.teamMaxHp ?? 1).toFixed(1)}"><i></i></div>`
 
