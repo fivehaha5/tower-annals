@@ -919,7 +919,7 @@ export function ascendSkill(skillUid: string, _providerCharUid?: string): string
 }
 
 /**
- * 技能本通關：產出數本同名技能本，隨機分給已持有技能，並進入冷卻。
+ * 技能本通關：產出數本同名技能本，優先分給出戰技能（其餘隨機），並進入冷卻。
  * 回傳摘要字串供 toast。
  */
 export function grantSkillDungeonBooks(floor: number): string {
@@ -929,9 +929,18 @@ export function grantSkillDungeonBooks(floor: number): string {
   if (!items.length) {
     return `技能本通關，但尚無技能可分配（冷卻 ${SKILL_DUNGEON_COOLDOWN_SEC}s）`
   }
+  const equipped: typeof items = []
+  for (const role of ROLES) {
+    for (const kind of KINDS) {
+      const uid = state.loadouts[role]?.skills?.[kind]
+      const sk = uid ? getSkillItem(state, uid) : undefined
+      if (sk) equipped.push(sk)
+    }
+  }
   const gained = new Map<string, number>()
   for (let i = 0; i < n; i++) {
-    const sk = items[Math.floor(Math.random() * items.length)]!
+    const pool = equipped.length && Math.random() < 0.72 ? equipped : items
+    const sk = pool[Math.floor(Math.random() * pool.length)]!
     sk.books = (sk.books ?? 0) + 1
     gained.set(sk.uid, (gained.get(sk.uid) ?? 0) + 1)
   }

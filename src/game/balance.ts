@@ -43,11 +43,12 @@ export const CHAR_LEVEL_MAX = 100
  */
 export function mainEnemyPower(floor: number): number {
   const f = Math.max(1, floor)
-  let p = 34 * Math.pow(f, 1.16) * (1 + f / 2400)
-  if (f >= 35) p *= 1 + (f - 35) * 0.0042
-  if (f >= 100) p *= 1 + (f - 100) * 0.0055
-  if (f >= 250) p *= 1 + (f - 250) * 0.007
-  if (f % 10 === 0) p *= 1.1
+  // 前期平；50–90 緩和成長（最佳規劃在此硬停）；百層後再拉
+  let p = 32 * Math.pow(f, 1.14) * (1 + f / 2800)
+  if (f >= 40) p *= 1 + (f - 40) * 0.0028
+  if (f >= 90) p *= 1 + (f - 90) * 0.0045
+  if (f >= 180) p *= 1 + (f - 180) * 0.0065
+  if (f % 10 === 0) p *= 1.08
   return Math.floor(p)
 }
 
@@ -120,38 +121,38 @@ export const UNIQUE_SKILL_BONUS = 1.18
 export const SKILL_KIND_COOLDOWN_TURNS = 2
 
 /** 單技能出手補償（舊版同 tick 可疊三招，改為一招後略抬倍率） */
-export const SINGLE_SKILL_FOCUS = 1.2
+export const SINGLE_SKILL_FOCUS = 1.28
 
 /** 技能皆在冷卻／未裝備時的普攻威力係數 */
-export const BASIC_ATTACK_POWER = 0.75
+export const BASIC_ATTACK_POWER = 0.8
 
 /**
  * 完整回合＝全員左→右各出手一次＋敵方一擊。
  * 超過此回合數觸發暴走，阻止弱勢無限磨死。
  */
-export const BERSERK_AFTER_ROUNDS = 26
+export const BERSERK_AFTER_ROUNDS = 28
 
 /** 暴走起始傷害倍率 */
-export const BERSERK_DMG_MULT = 2.05
+export const BERSERK_DMG_MULT = 1.95
 
 /** 暴走每多一回合再疊加的傷害倍率 */
-export const BERSERK_DMG_GROW = 0.28
+export const BERSERK_DMG_GROW = 0.24
 
 /** 暴走每回合額外燒血（占最大生命比例，隨超回合遞增） */
-export const BERSERK_BURN_BASE = 0.02
-export const BERSERK_BURN_GROW = 0.008
+export const BERSERK_BURN_BASE = 0.018
+export const BERSERK_BURN_GROW = 0.007
 
 /** 敵方攻擊相對難度種子係數（略收，讓同戰力可在暴走前清層） */
-export const ENEMY_ATK_FROM_POWER = 0.054
+export const ENEMY_ATK_FROM_POWER = 0.048
 
 /**
  * 敵方生命相對難度種子。
  * 高種子再乘 soft scale，避免「戰力數字很高但血量不夠技能爆發」。
  */
-export const ENEMY_HP_FROM_POWER = 0.78
+export const ENEMY_HP_FROM_POWER = 0.72
 
 /** 敵方護盾相對難度種子（普通／小首領／Boss 再乘倍率） */
-export const ENEMY_SHIELD_FROM_POWER = 0.18
+export const ENEMY_SHIELD_FROM_POWER = 0.16
 
 /**
  * 敵方減傷錨點：無硬頂；錨點略上移，前期減傷更溫和。

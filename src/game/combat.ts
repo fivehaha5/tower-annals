@@ -326,12 +326,17 @@ export function battleTick(state: GameState): {
 
   if (b.teamHp <= 0) {
     const floor = farmFloorOf(state)
-    // 戰敗懲罰：前期輕罰，避免水晶死亡螺旋；後期仍有感
-    const crystalLoss = Math.min(
-      state.resources.crystal,
-      Math.floor(2 + floor * 0.22 + Math.max(0, floor - 100) * 0.2),
-    )
-    const goldLoss = Math.min(state.resources.gold, Math.max(0, Math.floor(floor / 60)))
+    // 戰敗懲罰：水晶告急時免罰，打斷死亡螺旋；後期仍有感
+    const broke = state.resources.crystal < 40
+    const crystalLoss = broke
+      ? 0
+      : Math.min(
+          state.resources.crystal,
+          Math.floor(2 + floor * 0.18 + Math.max(0, floor - 100) * 0.18),
+        )
+    const goldLoss = broke
+      ? 0
+      : Math.min(state.resources.gold, Math.max(0, Math.floor(floor / 70)))
     state.resources.crystal -= crystalLoss
     state.resources.gold -= goldLoss
     const failGains: Partial<Resources> = {}

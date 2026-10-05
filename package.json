@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host",
     "dev:host": "vite --host",
-    "sim:balance": "tsx scripts/monte-carlo-balance.ts"
+    "sim:balance": "tsx scripts/monte-carlo-balance.ts",
+    "sim:optimal": "tsx scripts/sim-optimal-plan.ts"
   },
   "devDependencies": {
     "tsx": "^4.20.5",

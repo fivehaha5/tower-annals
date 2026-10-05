@@ -291,7 +291,7 @@ export function skillUpgradeCost(level: number): number {
  */
 export function skillAscendCost(rarity: Rarity): number {
   const rank = Math.max(1, rarityIndex(rarity) + 1)
-  return nthPrime(rank) * 5
+  return nthPrime(rank) * 3
 }
 
 /** @deprecated 改用 skillAscendCost；保留別名避免外部殘留引用 */
