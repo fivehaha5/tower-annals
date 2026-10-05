@@ -88,10 +88,12 @@ import {
 import { RELIC_MAP, RELICS, relicsUnlockedByRebirth } from '../game/data/relics'
 import { countRebirthBonusCells, roleRebirthBonus } from '../game/mechanics'
 import { APP_VERSION, checkAppUpdate, warmImageCache } from '../appUpdate'
+import { SKILL_DUNGEON_UNLOCK } from '../game/balance'
 
 const MODE_LABEL: Record<IdleMode, string> = {
   main: '主塔',
   blueprint: '副塔',
+  skill: '技能本',
   boss: '王塔',
   godking: '異域神王',
 }
@@ -100,7 +102,7 @@ const WORK_LABEL: Record<WorkJob, string> = {
   gold: '淘金',
   forge: '熔鍛',
   essence: '精華',
-  skillbook: '抄寫',
+  skillbook: '抄卡',
   soul: '集魂',
 }
 
@@ -110,7 +112,7 @@ const WORK_DESC: Record<WorkJob, string> = {
   gold: '產出金鑽',
   forge: '產出熔鍛碎片',
   essence: '產出法術精華',
-  skillbook: '產出技能書',
+  skillbook: '產出技能卡',
   soul: '產出神魂',
 }
 
@@ -396,13 +398,14 @@ function floorSelectPanel(state: GameState): string {
     </div>`
   }
 
-  const push = state.pushMode[mode as 'main' | 'blueprint']
+  const push = state.pushMode[mode as 'main' | 'blueprint' | 'skill']
   const open = uiFlag('__foldFarm')
+  const berserking = !!state.battle?.berserk
   return `<div class="panel compact-panel">
     <div class="section-head">
       <div>
         <div class="section-title">掛機 · ${formatNum(farm)}F · ${push === 'push' ? '沖層' : '原地'}</div>
-        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(enemyTargetPower(mode, farm))}</div>
+        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(enemyTargetPower(mode, farm))}${berserking ? ' · 暴走中' : ''}</div>
       </div>
       ${foldBtn('__foldFarm', '收起設定', '展開設定')}
     </div>
@@ -438,7 +441,7 @@ function dropPanel(state: GameState, mode: 'boss' | 'godking'): string {
     <div class="section-head">
       <div>
         <div class="section-title">掉落 · ${aimLabel}</div>
-        <div class="muted">${first ? `書 ${formatNum(state.resources.skillbook)} · 輪迴 ${cycleInfo.cycle}` : '首勝免費包待領'}</div>
+        <div class="muted">${first ? `卡 ${formatNum(state.resources.skillbook)} · 輪迴 ${cycleInfo.cycle}` : '首勝免費包待領'}</div>
       </div>
       ${foldBtn('__foldDrop', '收起掉落', '展開掉落')}
     </div>
@@ -446,7 +449,7 @@ function dropPanel(state: GameState, mode: 'boss' | 'godking'): string {
       open
         ? `<div class="muted" style="margin-top:6px">${
             first
-              ? `空刷免費機率掉；定向耗 ${formatNum(aimCost.crystal)} 水晶＋${formatNum(aimCost.skillbook)} 書（隨輪迴遞增）`
+              ? `空刷免費機率掉；定向耗 ${formatNum(aimCost.crystal)} 水晶＋${formatNum(aimCost.skillbook)} 技能卡（隨輪迴遞增）`
               : '尚未首勝：下一勝必掉角色＋技能'
           }</div>
     <div class="btn-row" style="margin-top:8px">
@@ -580,11 +583,18 @@ function towerView(state: GameState): string {
 
   return `
     <div class="mode-tabs">
-      ${(['main', 'blueprint', 'boss', 'godking'] as IdleMode[])
+      ${(['main', 'blueprint', 'skill', 'boss', 'godking'] as IdleMode[])
         .map((m) => {
-          const disabled = m === 'godking' && lockedGod
+          const lockedSkill = m === 'skill' && state.floors.main < SKILL_DUNGEON_UNLOCK
+          const disabled = (m === 'godking' && lockedGod) || lockedSkill
           const farm = state.farmFloor?.[m] ?? state.floors[m]
-          return `<button data-mode="${m}" class="${state.idleMode === m ? 'active' : ''}" ${disabled ? 'disabled' : ''}>${MODE_LABEL[m]}${m === 'godking' && lockedGod ? `(主塔${GODKING_UNLOCK})` : ''}<br/><span class="muted">掛${formatNum(farm)}/解${formatNum(state.floors[m])}</span></button>`
+          const lockHint =
+            m === 'godking' && lockedGod
+              ? `(主塔${GODKING_UNLOCK})`
+              : lockedSkill
+                ? `(主塔${SKILL_DUNGEON_UNLOCK})`
+                : ''
+          return `<button data-mode="${m}" class="${state.idleMode === m ? 'active' : ''}" ${disabled ? 'disabled' : ''}>${MODE_LABEL[m]}${lockHint}<br/><span class="muted">掛${formatNum(farm)}/解${formatNum(state.floors[m])}</span></button>`
         })
         .join('')}
     </div>
@@ -708,7 +718,7 @@ function roleSkillBlock(state: GameState, role: Role): string {
     return `<div style="margin-top:8px">
       <div class="muted">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '?'} ${raritySpan(s.rarity)} Lv.${s.level}</div>
       <div class="btn-row" style="margin-top:4px">
-        <button class="btn" data-act="skillup" data-id="${s.uid}">強化(${formatNum(upCost)}精華)</button>
+        <button class="btn" data-act="skillup" data-id="${s.uid}">強化(${formatNum(upCost)}技能卡)</button>
         ${
           canAsc
             ? `<button class="btn" data-act="skillasc" data-id="${s.uid}" data-char="${ch?.uid ?? ''}" ${canPayCards ? '' : 'disabled'}>升階(耗${cardCost}張同名)</button>`
@@ -1075,7 +1085,7 @@ function shopHubView(state: GameState): string {
           <div class="station-title">資源兌換</div>
           <div class="station-count">6 類</div>
         </div>
-        <div class="station-desc">水晶、藍圖、熔鍛、精華、技能書、神魂</div>
+        <div class="station-desc">水晶、藍圖、熔鍛、精華、技能卡、神魂</div>
       </button>
       <button class="station-card tap-target" data-act="shoppage" data-page="cards">
         <div class="station-head">
@@ -1582,12 +1592,12 @@ function gameGuideModal(): string {
   return `<div class="modal guide-modal" data-act="guide-close"><div class="sheet" data-stop="1">
     <h3>遊戲引導</h3>
     <div class="muted" style="text-align:left;line-height:1.55;max-height:55vh;overflow-y:auto">
-      <p><strong>爬塔</strong>：主塔／副塔可沖層或原地刷（副塔每 5 層小首領）；戰敗會扣水晶／金鑽。王塔／神王可空刷（低機率）或定向（水晶＋技能書隨輪迴遞增）；資源不足會改回空刷。</p>
+      <p><strong>爬塔</strong>：主塔／副塔／技能本可沖層或原地刷（副塔／技能本每 5 層小首領）；技能本主產技能卡（主塔 ${SKILL_DUNGEON_UNLOCK} 解鎖）。戰敗會扣水晶／金鑽。王塔／神王可空刷（低機率）或定向（水晶＋技能卡隨輪迴遞增）；資源不足會改回空刷。</p>
       <p><strong>職業編隊</strong>：戰士、法師、牧師各有獨立 loadout——出戰角色、七部位裝備、三技能格、遺物。換角色不改裝備配置。</p>
       <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），高品機率偏低；強化只加等級，不能事後升品。</p>
-      <p><strong>技能</strong>：商店普通／稀有（金鑽較貴）；更高階靠升階或王塔／神王獨特技，升階耗同名卡。</p>
+      <p><strong>技能</strong>：商店普通／稀有（金鑽）；強化耗技能卡（第 n 階＝第 n 個質數×100）；更高階靠升階或王塔／神王獨特技，升階耗同名卡。同類技能 CD＝2 回合，三技能輪替。戰鬥超過 20 完整回合敵方暴走。</p>
       <p><strong>後勤</strong>：每工位最多 ${workStationCap(1)} 人（主塔每 1000 層 +1，上限 6）；每 ${WORK_BATCH_SEC} 秒一批；主塔每 100 層 +4%（上限 80%）。含打造、訂單、派遣。</p>
-      <p><strong>養成消耗</strong>：進階神魂、增效同名卡、技能精華、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。</p>
+      <p><strong>養成消耗</strong>：進階神魂、增效同名卡（前期弱、後期漸強）、技能卡強化、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。</p>
       <p><strong>派遣</strong>：席位有上限；獎勵隨主塔層遞增。非出戰、非打工角色可遠征。</p>
       <p><strong>訂單</strong>：需求與獎勵隨主塔層遞增，完成後短時間刷新。</p>
       <p><strong>遺物</strong>：依出戰角色轉生解鎖，裝在職業格上。</p>
@@ -1602,7 +1612,7 @@ function settingsView(_state: GameState): string {
   return `
     <div class="panel">
       <div class="section-title">設置 · ${GAME_NAME}</div>
-      <p class="muted">v3 存檔。舊版存檔已作廢。本地自動存；可匯出檔案／存檔碼做雲端備份。</p>
+      <p class="muted">v4 存檔（可由 v3 遷移）。本地自動存；可匯出檔案／存檔碼做雲端備份。</p>
       <button class="btn" data-act="guide" style="width:100%;margin-bottom:8px">遊戲引導</button>
       <div class="btn-row">
         <button class="btn primary" data-act="savelocal">立即存檔</button>
@@ -2257,7 +2267,7 @@ function bind(root: HTMLElement) {
         actions.setFarmFloor(mode, actions.getState().floors[mode])
       }
       if (act === 'pushmode') {
-        const mode = (el as HTMLElement).dataset.mode as 'main' | 'blueprint'
+        const mode = (el as HTMLElement).dataset.mode as 'main' | 'blueprint' | 'skill'
         const push = (el as HTMLElement).dataset.push as PushMode
         actions.setPushMode(mode, push)
       }

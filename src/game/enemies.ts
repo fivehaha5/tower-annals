@@ -1,6 +1,13 @@
 import type { Element, EnemySnapshot, IdleMode } from './types'
 import { BOSS_CHARACTERS, GODKING_CHARACTERS } from './data/characters'
-import { bossEnemyPower, godkingEnemyPower, mainEnemyPower } from './balance'
+import {
+  ENEMY_ATK_FROM_POWER,
+  ENEMY_HP_FROM_POWER,
+  ENEMY_SHIELD_FROM_POWER,
+  bossEnemyPower,
+  godkingEnemyPower,
+  mainEnemyPower,
+} from './balance'
 import { BOSS_MECHANIC_BY_CHAR } from './mechanics'
 import { portraitPath } from './util'
 
@@ -66,7 +73,7 @@ export function isBossFloor(mode: IdleMode, floor: number): boolean {
 }
 
 export function isMiniBossFloor(mode: IdleMode, floor: number): boolean {
-  if (mode === 'blueprint') return floor > 0 && floor % 5 === 0
+  if (mode === 'blueprint' || mode === 'skill') return floor > 0 && floor % 5 === 0
   if (mode === 'main') return floor > 0 && floor % 10 === 0
   return false
 }
@@ -104,6 +111,7 @@ export function enemyPortrait(mode: IdleMode, floor: number): string | undefined
  * 目標戰力對齊 balance.ts 里程碑：
  * - 主塔：前期可推進，中後期吃轉生／裝備階
  * - 副塔：一層 ≈ 主塔 ×100 層
+ * - 技能本：一層 ≈ 主塔 ×45 層（刷技能卡）
  * - 王塔／神王：獨立指數軸
  */
 export function enemyTargetPower(mode: IdleMode, floor: number): number {
@@ -112,6 +120,8 @@ export function enemyTargetPower(mode: IdleMode, floor: number): number {
   if (mode === 'boss') return bossEnemyPower(f)
   if (mode === 'godking') return godkingEnemyPower(f)
   if (mode === 'blueprint') return enemyTargetPower('main', f * 100)
+  // 技能本：約主塔 ×14 層難度，主塔 25 解鎖後可穩刷低層技能卡
+  if (mode === 'skill') return enemyTargetPower('main', Math.max(8, f * 14))
   return mainEnemyPower(f)
 }
 
@@ -119,11 +129,10 @@ function statsFromPower(
   power: number,
   opts: { boss: boolean; mini: boolean },
 ): Pick<EnemySnapshot, 'hp' | 'maxHp' | 'shield' | 'maxShield' | 'atk' | 'power'> {
-  const shieldRatio = opts.boss ? 0.65 : opts.mini ? 0.5 : 0.35
-  const hp = Math.max(1, Math.floor(power * 1.15))
-  const shield = Math.max(0, Math.floor(power * shieldRatio))
-  const atk = Math.max(1, Math.floor(power * 0.055))
-  // 顯示戰力以目標為準，避免分配誤差讓玩家誤判
+  const shieldMult = opts.boss ? 2.2 : opts.mini ? 1.55 : 1
+  const hp = Math.max(1, Math.floor(power * ENEMY_HP_FROM_POWER))
+  const shield = Math.max(0, Math.floor(power * ENEMY_SHIELD_FROM_POWER * shieldMult))
+  const atk = Math.max(1, Math.floor(power * ENEMY_ATK_FROM_POWER))
   return {
     hp,
     maxHp: hp,

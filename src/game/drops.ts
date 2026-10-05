@@ -39,7 +39,7 @@ export function aimLootCost(mode: 'boss' | 'godking', floor: number): LootCost {
 /**
  * 首勝：必掉角色卡＋獨特技能各一（免費）
  * 空刷 aim=none：免費，依輪迴機率掉
- * 定向：同時消耗水晶＋技能書，必掉；資源不足 → aimCancelled（呼叫端應終止定向）
+ * 定向：同時消耗水晶＋技能卡，必掉；資源不足 → aimCancelled（呼叫端應終止定向）
  */
 export function rollClearLoot(state: GameState, mode: IdleMode): {
   loot: LootDrop

@@ -13,7 +13,7 @@ export type Rarity =
 
 export type SkillKind = 'attack' | 'defense' | 'support'
 
-export type IdleMode = 'main' | 'blueprint' | 'boss' | 'godking'
+export type IdleMode = 'main' | 'blueprint' | 'skill' | 'boss' | 'godking'
 
 export type WorkJob = 'gold' | 'forge' | 'essence' | 'skillbook' | 'soul'
 
@@ -29,6 +29,7 @@ export type PushMode = 'push' | 'stay'
 export type FloorMap = {
   main: number
   blueprint: number
+  skill: number
   boss: number
   godking: number
 }
@@ -273,6 +274,13 @@ export interface BattleSnapshot {
    * 缺省／0 = 就緒；戰鬥新建時清空，不影響存檔結構。
    */
   skillCds?: Partial<Record<Role, Partial<Record<SkillKind, number>>>>
+  /**
+   * 已完成的完整回合數（全員左→右＋敵方一擊＝1）。
+   * ≥ BERSERK_AFTER_ROUNDS 時敵方暴走。
+   */
+  roundsElapsed?: number
+  /** 敵方是否已進入暴走 */
+  berserk?: boolean
 }
 
 export interface LootDrop {
@@ -328,6 +336,7 @@ export interface GameState {
   pushMode: {
     main: PushMode
     blueprint: PushMode
+    skill: PushMode
   }
   idleMode: IdleMode
   battle: BattleSnapshot | null

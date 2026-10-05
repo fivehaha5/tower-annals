@@ -35,11 +35,17 @@ import {
 } from './util'
 import {
   BASIC_ATTACK_POWER,
+  BERSERK_AFTER_ROUNDS,
+  BERSERK_BURN_BASE,
+  BERSERK_BURN_GROW,
+  BERSERK_DMG_GROW,
+  BERSERK_DMG_MULT,
   EQUIP_LEVEL_SCALE,
   SINGLE_SKILL_FOCUS,
   SKILL_KIND_COOLDOWN_TURNS,
-  SKILL_LEVEL_SCALE,
   UNIQUE_SKILL_BONUS,
+  boostWorkBonus,
+  skillLevelPowerBonus,
 } from './balance'
 
 const ROLES: Role[] = ['warrior', 'mage', 'priest']
@@ -88,7 +94,7 @@ export function getTeamRoles(state: GameState): { role: Role; ch: OwnedCharacter
 }
 
 export function workBoostMult(ch: OwnedCharacter): number {
-  return 1 + (ch.boost ?? 0) * 0.25
+  return 1 + boostWorkBonus(ch.boost ?? 0)
 }
 
 function relicEffects(state: GameState, role: Role) {
@@ -112,6 +118,11 @@ export function calcCharStats(state: GameState, ch: OwnedCharacter): Stats {
   s = scaleStats(s, rarityMult(ch.rarity))
   s = scaleStats(s, ascendMult(ch.ascend ?? 0))
   s = scaleStats(s, rebirthMult(ch.rebirth ?? 0))
+  // 增效對戰鬥屬性：前期弱、後期漸強（打工倍率另用 workBoostMult）
+  {
+    const combatBoost = boostWorkBonus(ch.boost ?? 0) * 0.35
+    if (combatBoost > 0) s = scaleStats(s, 1 + combatBoost)
+  }
 
   // 裝備僅在出戰格且由該角色出戰時生效
   if (wearing && loadout) {
@@ -161,7 +172,7 @@ export function teamTotals(state: GameState): Stats {
 function skillStrength(sk: OwnedSkill | undefined): number {
   if (!sk) return 0.35
   const uniqueBonus = SKILL_MAP[sk.skillId]?.unique ? UNIQUE_SKILL_BONUS : 1
-  return (1 + sk.level * SKILL_LEVEL_SCALE) * rarityMult(sk.rarity) * uniqueBonus
+  return (1 + skillLevelPowerBonus(sk.level)) * rarityMult(sk.rarity) * uniqueBonus
 }
 
 export function farmFloorOf(state: GameState): number {
@@ -188,6 +199,8 @@ export function createBattle(state: GameState): BattleSnapshot {
     roundDmgToEnemy: 0,
     floaters: [],
     skillCds: {},
+    roundsElapsed: 0,
+    berserk: false,
   }
 }
 
@@ -262,8 +275,9 @@ export function battleTick(state: GameState): {
 
   if (b.teamHp <= 0) {
     const floor = farmFloorOf(state)
-    const crystalLoss = Math.min(state.resources.crystal, Math.floor(30 + floor * 2.2))
-    const goldLoss = Math.min(state.resources.gold, Math.max(0, Math.floor(2 + floor / 18)))
+    // 戰敗懲罰收斂，避免卡關時把養成資源罰光導致死亡螺旋
+    const crystalLoss = Math.min(state.resources.crystal, Math.floor(10 + floor * 0.85))
+    const goldLoss = Math.min(state.resources.gold, Math.max(0, Math.floor(1 + floor / 35)))
     state.resources.crystal -= crystalLoss
     state.resources.gold -= goldLoss
     state.battle = createBattle(state)
@@ -424,7 +438,7 @@ function resolvePartyAction(
     trueDealt *= m
   }
 
-  let enemyDefFactor = 1 + b.enemy.atk * 0.0016
+  let enemyDefFactor = 1 + Math.min(14, b.enemy.power * 0.00007)
   if (b.enemy.mechanic === 'stoneSkin') enemyDefFactor *= 1.15
   if (b.enemy.mechanic === 'mountainSpine') enemyDefFactor *= 1.25
 
@@ -522,36 +536,65 @@ function resolveEnemyAction(
     incoming += Math.floor(b.teamMaxHp * 0.008)
   }
 
+  // 完整回合結束時累計；≥20 觸發暴走
+  const rounds = (b.roundsElapsed ?? 0) + 1
+  b.roundsElapsed = rounds
+  if (rounds >= BERSERK_AFTER_ROUNDS) {
+    b.berserk = true
+    const over = rounds - (BERSERK_AFTER_ROUNDS - 1)
+    incoming = Math.floor(incoming * (BERSERK_DMG_MULT + (over - 1) * BERSERK_DMG_GROW))
+    b.teamShield = Math.floor(b.teamShield * 0.65)
+    const burn = Math.floor(b.teamMaxHp * (BERSERK_BURN_BASE + (over - 1) * BERSERK_BURN_GROW))
+    b.teamHp = Math.max(0, b.teamHp - burn)
+  }
+
   if ((b.chargeShield ?? 0) > 0 && incoming > 0) {
     b.chargeShield! -= 1
     incoming = Math.floor(incoming * 0.15)
   }
 
-  const mitigated = Math.floor(incoming * (100 / (100 + teamTotals(state).def * 0.15)))
+  // 防禦減傷：保留有效減傷，但高防不再把傷害壓到可忽略
+  const teamDef = teamTotals(state).def
+  const mitigated = Math.max(
+    Math.floor(incoming * 0.12),
+    Math.floor(incoming * (110 / (110 + teamDef * 0.055))),
+  )
   const tr = applyDamage(b.teamHp, b.teamShield, mitigated)
   b.teamHp = tr.hp
   b.teamShield = tr.shield
   b.floaters = []
-  b.log = `敵方反擊 · 受到 ${mitigated} 傷害`
+  b.log = b.berserk
+    ? `敵方暴走 · 受到 ${mitigated} 傷害（第 ${rounds} 回合）`
+    : `敵方反擊 · 受到 ${mitigated} 傷害`
 }
 
 export function clearRewards(state: GameState): Partial<Resources> {
   const floor = farmFloorOf(state)
-  const mainCrystalBase = Math.floor(7 + floor * 1.15)
+  // 提高主塔水晶與副塔藍圖基礎，讓早中期掛機有感
+  const mainCrystalBase = Math.floor(18 + floor * 2.55)
   const mainMiniBonus = floor % 10 === 0 ? Math.floor(mainCrystalBase * 1.35) : 0
 
   if (state.idleMode === 'main') {
     return {
       crystal: mainCrystalBase + mainMiniBonus,
-      gold: Math.max(1, Math.floor(1 + floor / 22)),
+      gold: Math.max(1, Math.floor(1 + floor / 20)),
+      blueprint: Math.max(0, Math.floor(1 + floor * 0.08)),
     }
   }
   if (state.idleMode === 'blueprint') {
     const mainEquivalent = mainCrystalBase + Math.floor(mainCrystalBase * 1.35)
     return {
-      crystal: Math.max(1, Math.floor(mainEquivalent * 0.18)),
-      blueprint: Math.floor(2 + floor * 0.32),
-      forge: Math.max(0, Math.floor(floor * 0.05)),
+      crystal: Math.max(1, Math.floor(mainEquivalent * 0.22)),
+      blueprint: Math.floor(10 + floor * 1.05),
+      forge: Math.max(0, Math.floor(floor * 0.08)),
+    }
+  }
+  if (state.idleMode === 'skill') {
+    const mini = floor % 5 === 0
+    return {
+      skillbook: Math.floor(12 + floor * 1.35) + (mini ? Math.floor(18 + floor * 0.6) : 0),
+      crystal: Math.max(1, Math.floor(mainCrystalBase * 0.28)),
+      essence: Math.max(0, Math.floor(2 + floor * 0.12)),
     }
   }
   if (state.idleMode === 'boss') {
@@ -566,7 +609,7 @@ export function clearRewards(state: GameState): Partial<Resources> {
     gold: Math.floor(10 + floor * 2.4),
     soul: Math.max(1, Math.floor(1 + floor * 0.5)),
     essence: Math.max(1, Math.floor(floor * 0.28)),
-    skillbook: Math.max(1, Math.floor(floor * 0.16)),
+    skillbook: Math.max(1, Math.floor(floor * 0.22)),
   }
 }
 

@@ -18,12 +18,13 @@ export { CHAR_LEVEL_MAX } from './balance'
 export const GAME_NAME = '異塔編年'
 /** 作廢舊存檔：換 key */
 export const SAVE_KEY = 'tower-annals-save-v3'
-export const SAVE_VERSION = 3
+/** v4：技能卡經濟、技能本、暴走與增效曲線；舊 v3 存檔可遷移 */
+export const SAVE_VERSION = 4
 export const GODKING_UNLOCK = 10000
 export const TICK_MS = 1000
 /** 定向掉落基礎水晶（再 × 輪迴） */
 export const LOOT_COST_CRYSTAL = 12000
-/** 定向掉落基礎技能書（再隨輪迴緩增） */
+/** 定向掉落基礎技能卡（再隨輪迴緩增） */
 export const LOOT_COST_SKILLBOOK_AIM = 25
 /** 離線結算上限（秒）— 收斂為 4 小時 */
 export const OFFLINE_CAP_SEC = 4 * 3600
@@ -110,7 +111,7 @@ export const RESOURCE_META: {
   { key: 'blueprint', name: '藍圖碎片', rarity: '稀有' },
   { key: 'forge', name: '熔鍛碎片', rarity: '史詩' },
   { key: 'essence', name: '法術精華', rarity: '史詩' },
-  { key: 'skillbook', name: '技能書', rarity: '史詩' },
+  { key: 'skillbook', name: '技能卡', rarity: '史詩' },
   { key: 'soul', name: '神魂', rarity: '傳奇' },
 ]
 
@@ -120,7 +121,7 @@ export const SHOP_RATES: Partial<Record<keyof Resources, number>> = {
   blueprint: 5,
   forge: 6,
   essence: 6,
-  skillbook: 8,
+  skillbook: 5,
   soul: 12,
 }
 
@@ -277,10 +278,10 @@ export function nextBlueprintUnlockFloor(floor: number): number {
   return nextPrimeAfter(progress) * 100
 }
 
-/** 技能強化：法術精華（隨等級遞增） */
+/** 技能強化：技能卡；第 level 階（由 level → level+1）耗 nthPrime(level)×100 */
 export function skillUpgradeCost(level: number): number {
   const lv = Math.max(1, Math.floor(level))
-  return Math.floor(6 + lv * 4 + lv * lv * 0.18)
+  return nthPrime(lv) * 100
 }
 
 /** 技能升階：消耗同名角色卡（保留本體，多餘卡作材料） */
@@ -421,7 +422,10 @@ export function addResources(a: Resources, b: Partial<Resources>): Resources {
 
 /** 依 Vite base（本機 `/`、GitHub Pages `/tower-annals/`）組資源路徑 */
 export function assetUrl(path: string): string {
-  const base = import.meta.env.BASE_URL || '/'
+  const base =
+    (typeof import.meta !== 'undefined' &&
+      (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL) ||
+    '/'
   const clean = path.replace(/^\//, '')
   return `${base}${clean}`
 }

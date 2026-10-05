@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview --host",
-    "dev:host": "vite --host"
+    "dev:host": "vite --host",
+    "sim:balance": "tsx scripts/monte-carlo-balance.ts"
   },
   "devDependencies": {
+    "tsx": "^4.20.5",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   }

@@ -104,10 +104,10 @@ export type DispatchOption = {
 }
 
 export const DISPATCH_OPTIONS: DispatchOption[] = [
-  { hours: 1, label: '短巡（1 時）', reward: { blueprint: 8 } },
-  { hours: 2, label: '抄錄（2 時）', reward: { skillbook: 6 } },
-  { hours: 4, label: '探層（4 時）', reward: { blueprint: 22, skillbook: 4 } },
-  { hours: 8, label: '遠征（8 時）', reward: { blueprint: 50, skillbook: 14 } },
+  { hours: 1, label: '短巡（1 時）', reward: { blueprint: 12 } },
+  { hours: 2, label: '抄卡（2 時）', reward: { skillbook: 14 } },
+  { hours: 4, label: '探層（4 時）', reward: { blueprint: 36, skillbook: 10 } },
+  { hours: 8, label: '遠征（8 時）', reward: { blueprint: 80, skillbook: 28 } },
 ]
 
 /** 同時派遣上限（與工位同規則：基礎 3，主塔每 1000 層 +1，上限 6） */

@@ -20,6 +20,7 @@ import {
   teamPower,
   workBoostMult,
 } from './combat'
+import { SKILL_CARD_STARTER_CUSHION, SKILL_DUNGEON_UNLOCK } from './balance'
 import {
   DISPATCH_OPTIONS,
   WORK_BATCH_SEC,
@@ -189,6 +190,7 @@ export function createNewState(): GameState {
       ...emptyResources(),
       crystal: 200,
       gold: 30,
+      skillbook: SKILL_CARD_STARTER_CUSHION,
     },
     roster: [],
     equips: [],
@@ -203,9 +205,9 @@ export function createNewState(): GameState {
     orders: [],
     relicInventory: [],
     dex: [],
-    floors: { main: 1, blueprint: 1, boss: 1, godking: 1 },
-    farmFloor: { main: 1, blueprint: 1, boss: 1, godking: 1 },
-    pushMode: { main: 'push', blueprint: 'push' },
+    floors: { main: 1, blueprint: 1, skill: 1, boss: 1, godking: 1 },
+    farmFloor: { main: 1, blueprint: 1, skill: 1, boss: 1, godking: 1 },
+    pushMode: { main: 'push', blueprint: 'push', skill: 'push' },
     idleMode: 'main',
     battle: null,
     lastTick: Date.now(),
@@ -226,10 +228,22 @@ export function hydrate(s: GameState) {
 }
 
 export function normalizeState(s: GameState): GameState {
-  if (!s.version || s.version < SAVE_VERSION || !s.firstWin || !s.dropSettings) {
+  // 僅作廢未知／過新版本；同 key 內舊版可遷移
+  if (!s.version || s.version > SAVE_VERSION || !s.firstWin || !s.dropSettings) {
     return createNewState()
   }
+
+  const fromVersion = s.version
   s.version = SAVE_VERSION
+  s.resources ??= emptyResources()
+  s.resources.crystal ??= 0
+  s.resources.gold ??= 0
+  s.resources.blueprint ??= 0
+  s.resources.forge ??= 0
+  s.resources.essence ??= 0
+  s.resources.skillbook ??= 0
+  s.resources.soul ??= 0
+
   s.skillItems ??= []
   s.loadouts ??= emptyLoadouts()
   for (const role of ROLES) {
@@ -245,12 +259,26 @@ export function normalizeState(s: GameState): GameState {
   s.dispatches ??= []
   s.orders ??= []
   s.relicInventory ??= []
-  s.floors ??= { main: 1, blueprint: 1, boss: 1, godking: 1 }
+  s.floors ??= { main: 1, blueprint: 1, skill: 1, boss: 1, godking: 1 }
+  s.floors.skill ??= 1
   s.farmFloor ??= { ...s.floors }
-  s.pushMode ??= { main: 'push', blueprint: 'push' }
-  for (const m of ['main', 'blueprint', 'boss', 'godking'] as const) {
+  s.farmFloor.skill ??= s.floors.skill
+  s.pushMode ??= { main: 'push', blueprint: 'push', skill: 'push' }
+  s.pushMode.skill ??= 'push'
+  for (const m of ['main', 'blueprint', 'skill', 'boss', 'godking'] as const) {
     s.floors[m] = Math.max(1, s.floors[m] ?? 1)
     s.farmFloor[m] = Math.max(1, Math.min(s.farmFloor[m] ?? s.floors[m], s.floors[m]))
+  }
+
+  // v3→v4：舊「技能書」保留為技能卡；贈送緩衝；補技能本層數
+  if (fromVersion < 4) {
+    s.resources.skillbook = (s.resources.skillbook ?? 0) + SKILL_CARD_STARTER_CUSHION
+    s.floors.skill = Math.max(1, s.floors.skill ?? 1)
+    s.farmFloor.skill = Math.max(1, Math.min(s.farmFloor.skill ?? 1, s.floors.skill))
+    s.pushMode.skill = s.pushMode.skill ?? 'push'
+    if (s.idleMode === ('skill' as IdleMode) && s.floors.main < SKILL_DUNGEON_UNLOCK) {
+      s.idleMode = 'main'
+    }
   }
   s.roster = mergeRosterStacks((s.roster ?? []).filter((c) => !!CHAR_MAP[c.defId]))
   for (const eq of s.equips ?? []) {
@@ -465,6 +493,7 @@ export function setTab(tab: GameState['tab']) {
 
 export function setIdleMode(mode: IdleMode) {
   if (mode === 'godking' && state.floors.main < GODKING_UNLOCK) return
+  if (mode === 'skill' && state.floors.main < SKILL_DUNGEON_UNLOCK) return
   if (state.idleMode !== mode) state.lastLootMsg = undefined
   state.idleMode = mode
   state.farmFloor[mode] = Math.max(1, Math.min(state.farmFloor[mode] ?? 1, state.floors[mode]))
@@ -480,7 +509,7 @@ export function setFarmFloor(mode: IdleMode, floor: number) {
   emit()
 }
 
-export function setPushMode(mode: 'main' | 'blueprint', push: PushMode) {
+export function setPushMode(mode: 'main' | 'blueprint' | 'skill', push: PushMode) {
   state.pushMode[mode] = push
   emit()
 }
@@ -488,7 +517,7 @@ export function setPushMode(mode: 'main' | 'blueprint', push: PushMode) {
 function advanceAfterClear(mode: IdleMode) {
   const farm = state.farmFloor[mode]
   const max = state.floors[mode]
-  if (mode === 'main' || mode === 'blueprint') {
+  if (mode === 'main' || mode === 'blueprint' || mode === 'skill') {
     if (state.pushMode[mode] === 'push') {
       if (farm >= max) {
         state.floors[mode] = farm + 1
@@ -523,7 +552,7 @@ function workYieldRaw(job: WorkJob, ch: OwnedCharacter): Partial<Resources> {
     case 'essence':
       return { essence: Math.max(1, Math.floor(power * 0.8)) }
     case 'skillbook':
-      return { skillbook: Math.max(1, Math.floor(power * 0.55)) }
+      return { skillbook: Math.max(1, Math.floor(power * 0.85)) }
     case 'soul':
       return { soul: Math.max(1, Math.floor(power * 0.22)) }
   }
@@ -586,7 +615,7 @@ export function simulateTicks(ticks: number, recordOffline = false, rawSeconds?:
       if (result.aimCancelled && (mode === 'boss' || mode === 'godking')) {
         state.dropSettings[mode] = { aim: 'none' }
         state.pendingToast =
-          '定向資源不足（需水晶與技能書），已改回空刷'
+          '定向資源不足（需水晶與技能卡），已改回空刷'
       }
       if (result.lootCost.crystal || result.lootCost.skillbook) {
         state.resources.crystal -= result.lootCost.crystal
@@ -745,8 +774,8 @@ export function upgradeSkill(skillUid: string): string | null {
   const sk = getSkillItem(state, skillUid)
   if (!sk) return '找不到技能'
   const cost = skillUpgradeCost(sk.level)
-  if (state.resources.essence < cost) return '法術精華不足'
-  state.resources.essence -= cost
+  if (state.resources.skillbook < cost) return '技能卡不足'
+  state.resources.skillbook -= cost
   sk.level += 1
   emit()
   return null

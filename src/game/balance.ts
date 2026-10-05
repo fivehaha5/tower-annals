@@ -6,12 +6,17 @@
  *    200→T1、300→T2、500→T3、700→T4…
  * 2. 角色轉生 → 可穿裝備階：轉生次數走到質數才升階（與藍圖同規則）
  *    轉生 2→穿 T1、3→T2、5→T3…（未達門檻的高階裝無法生效）
- * 3. 王塔／異域神王 → 神話／永恆角色卡＋獨特技能（首勝免費；之後耗水晶，定向另耗技能書）
+ * 3. 王塔／異域神王 → 神話／永恆角色卡＋獨特技能（首勝免費；之後耗水晶，定向另耗技能卡）
  *
  * ## 養成循環
  * 升級（水晶，上限 100）→ 滿級轉生（高額水晶+金鑽，Lv 回 1，轉生+1；戰力 +20%/次）
- * → 進階（神魂）／增效（同名卡遞增）／技能強化（精華）／技能升階（同名卡）
+ * → 進階（神魂）／增效（同名卡，前期弱、後期漸強）／技能強化（技能卡＝質數×100）／技能升階（同名卡）
  * → 裝備強化（熔鍛+金鑽）；戰敗扣水晶／金鑽
+ *
+ * ## 戰鬥節奏（現行）
+ * - 每 tick 一名隊員左→右出手；三人後敵方一擊＝1 完整回合
+ * - 技能種類 CD＝2（該角色出手次數）；三技能可輪替
+ * - 超過 20 完整回合觸發敵方「暴走」，急升傷害並削盾／燒血，阻止無限磨血
  *
  * ## 戰力里程碑（約略可穩刷）
  * - 新手編隊：主塔 ~10
@@ -34,7 +39,7 @@ export const CHAR_LEVEL_MAX = 100
 export function mainEnemyPower(floor: number): number {
   const f = Math.max(1, floor)
   let p = 58 * Math.pow(f, 1.33) * (1 + f / 1200)
-  if (f % 10 === 0) p *= 1.32
+  if (f % 10 === 0) p *= 1.18
   return Math.floor(p)
 }
 
@@ -91,20 +96,81 @@ export const EQUIP_TIER_SCALE = 0.8
 /** 裝備強化等級成長（略收斂，避免無限強化蓋過轉生／階級） */
 export const EQUIP_LEVEL_SCALE = 0.055
 
-/** 技能等級強度 */
-export const SKILL_LEVEL_SCALE = 0.11
+/**
+ * 技能等級強度：改為遞增曲線（見 skillLevelPowerBonus）。
+ * 保留常數供文件／舊註解對照；實際戰鬥用 skillLevelPowerBonus。
+ */
+export const SKILL_LEVEL_SCALE = 0.06
 
 /** 獨特技能額外倍率 */
 export const UNIQUE_SKILL_BONUS = 1.18
 
 /**
  * 單次出手只施放一個技能後，該技能種類冷卻（以該角色出手次數計）。
- * 1 = 下一次該角色出手不可再用同一種類，促進輪替、避免連打同一招。
+ * 2 = 隔一次該角色出手才能再用，三技能可乾淨輪替（A→B→C→A…）。
  */
-export const SKILL_KIND_COOLDOWN_TURNS = 1
+export const SKILL_KIND_COOLDOWN_TURNS = 2
 
 /** 單技能出手補償（舊版同 tick 可疊三招，改為一招後略抬倍率） */
-export const SINGLE_SKILL_FOCUS = 1.18
+export const SINGLE_SKILL_FOCUS = 1.12
 
 /** 技能皆在冷卻／未裝備時的普攻威力係數 */
 export const BASIC_ATTACK_POWER = 0.7
+
+/**
+ * 完整回合＝全員左→右各出手一次＋敵方一擊。
+ * 超過此回合數觸發暴走，阻止弱勢無限磨死。
+ */
+export const BERSERK_AFTER_ROUNDS = 20
+
+/** 暴走起始傷害倍率（第 20 回合） */
+export const BERSERK_DMG_MULT = 2.4
+
+/** 暴走每多一回合再疊加的傷害倍率 */
+export const BERSERK_DMG_GROW = 0.32
+
+/** 暴走每回合額外燒血（占最大生命比例，隨超回合遞增） */
+export const BERSERK_BURN_BASE = 0.025
+export const BERSERK_BURN_GROW = 0.01
+
+/** 敵方攻擊相對戰力係數（舊 0.055 過低；對齊戰力顯示且讓近戰力磨可能撐過 20 回合） */
+export const ENEMY_ATK_FROM_POWER = 0.078
+
+/** 敵方生命相對戰力 */
+export const ENEMY_HP_FROM_POWER = 0.88
+
+/** 敵方護盾相對戰力（普通／小首領／Boss 再乘倍率） */
+export const ENEMY_SHIELD_FROM_POWER = 0.24
+
+/** 技能本解鎖所需主塔層數 */
+export const SKILL_DUNGEON_UNLOCK = 25
+
+/** 新存檔／遷移贈送的技能卡緩衝 */
+export const SKILL_CARD_STARTER_CUSHION = 600
+
+/**
+ * 技能強化等級加成（相對 Lv.1）。
+ * 每升一級的增量隨等級提高：前期弱於舊版線性 0.11/級，後期才追上。
+ * 第 i→i+1 級增量 ≈ 0.028 + 0.01*(i-1)
+ */
+export function skillLevelPowerBonus(level: number): number {
+  const lv = Math.max(1, Math.floor(level))
+  let bonus = 0
+  for (let i = 1; i < lv; i++) {
+    bonus += 0.028 + 0.01 * (i - 1)
+  }
+  return bonus
+}
+
+/**
+ * 角色增效打工倍率：前期弱、後期遞增。
+ * 第 i 次增效加成 ≈ 0.05 + 0.018*(i-1)（舊版固定 +0.25/級過強）
+ */
+export function boostWorkBonus(boost: number): number {
+  const b = Math.max(0, Math.floor(boost))
+  let sum = 0
+  for (let i = 1; i <= b; i++) {
+    sum += 0.05 + 0.018 * (i - 1)
+  }
+  return sum
+}
