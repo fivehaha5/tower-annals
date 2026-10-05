@@ -363,6 +363,8 @@ function detectBreakpoints(timeline: Snapshot[]): Breakpoint[] {
     const dMain = b.main - a.main
     const dSk = b.skill - a.skill
     if (dMain <= 2 && dSk <= 0 && a.main >= 10) {
+      // 技能本養成期間主塔不動不算卡死
+      if (a.mode === 'skill' || b.mode === 'skill') continue
       out.push({
         h: a.h,
         kind: 'stall',
