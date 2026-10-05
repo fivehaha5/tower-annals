@@ -67,6 +67,8 @@ import type {
   GameState,
   IdleMode,
   OwnedCharacter,
+  OwnedEquip,
+  OwnedSkill,
   PushMode,
   Rarity,
   Resources,
@@ -154,6 +156,7 @@ const navIndCache: { tab: GameState['tab'] | null; x: number; w: number } = {
   w: 22,
 }
 type LogisticsPage = 'stations' | 'detail'
+type WorkPickTab = 'idle' | 'assigned'
 
 function logisticsPage(): LogisticsPage {
   return (window as unknown as { __logisticsPage?: LogisticsPage }).__logisticsPage ?? 'stations'
@@ -161,6 +164,10 @@ function logisticsPage(): LogisticsPage {
 
 function logisticsJob(): WorkJob | null {
   return (window as unknown as { __logisticsJob?: WorkJob | null }).__logisticsJob ?? null
+}
+
+function workPickTab(): WorkPickTab {
+  return (window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab ?? 'idle'
 }
 
 function escapeHtml(s: string): string {
@@ -778,9 +785,10 @@ function roleSkillBlock(state: GameState, role: Role): string {
   }).join('')
 
   const bagOpen = uiFlag('__foldSkillBag')
+  const bagStacks = stackSkillsForDisplay(bag)
   const bagList =
-    bag
-      .map((sk) => {
+    bagStacks
+      .map(({ rep: sk, count }) => {
         const sd = SKILL_MAP[sk.skillId]!
         const tip = skillEffectLine(sd)
         const bagUpCost = skillUpgradeCost(sk.level)
@@ -790,7 +798,7 @@ function roleSkillBlock(state: GameState, role: Role): string {
         const bagBooks = sk.books ?? 0
         const bagCanAsc = !!bagAsc && bagBooks >= bagAscCost
         return `<div class="row-item">
-          <div class="row-main">${sd.unique ? '★' : ''}${sd.name} · ${raritySpan(sk.rarity)} Lv.${sk.level} · 技能本×${formatNum(bagBooks)}${sd.source === 'antiKing' ? ' · 克制王階' : ''}</div>
+          <div class="row-main">${sd.unique ? '★' : ''}${sd.name} · ${raritySpan(sk.rarity)} Lv.${sk.level} · 技能本×${formatNum(bagBooks)}${count > 1 ? ` · x${count}` : ''}${sd.source === 'antiKing' ? ' · 克制王階' : ''}</div>
           <div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(sd))}${skillSpecialLine(sd) ? ` · ${escapeHtml(skillSpecialLine(sd))}` : ''}</div>
           <div class="muted" style="font-size:11px">${escapeHtml(sd.desc)}</div>
           <div class="btn-row">
@@ -813,7 +821,7 @@ function roleSkillBlock(state: GameState, role: Role): string {
     </div></div>
     <div class="card" style="margin-top:8px"><div class="body">
       <div class="section-head">
-        <div class="title">庫存（${bag.length}）</div>
+        <div class="title">庫存（${bag.length} 件 · ${bagStacks.length} 組 · 品質排序）</div>
         ${foldBtn('__foldSkillBag', '收起庫存', '展開庫存')}
       </div>
       ${bagOpen ? `<div class="list tight-list" style="margin-top:6px">${bagList}</div>` : ''}
@@ -827,6 +835,7 @@ function roleEquipBlock(state: GameState, role: Role): string {
     const p = parseEquipDefId(eq.defId)
     return p && p.role === role
   })
+  const stacks = stackEquipsByTier(list)
   const wornSlots = lo.equips ?? {}
   const bagOpen = uiFlag('__foldEquipBag')
   return `<div class="panel compact-panel">
@@ -840,22 +849,24 @@ function roleEquipBlock(state: GameState, role: Role): string {
       return `${EQUIP_SLOT_LABEL[slot]}T${p.tier}(${ownedEquipStatLine(eq)})`
     }).join(' · ')}</div>
     <div class="section-head">
-      <div class="muted">背包 ${list.length}</div>
+      <div class="muted">背包 ${list.length} 件 · ${stacks.length} 組 · 品質排序</div>
       ${foldBtn('__foldEquipBag', '收起背包', '展開背包')}
     </div>
     ${
       bagOpen
         ? `<div class="list tight-list" style="margin-top:6px">
       ${
-        list
-          .map((eq) => {
+        stacks
+          .map((stack) => {
+            const eq = stack.items[0]
             const p = parseEquipDefId(eq.defId)
             if (!p) return ''
-            const worn = wornSlots[p.slot] === eq.uid
+            const worn = stack.items.some((it) => wornSlots[p.slot] === it.uid)
             const wearLocked = !!ch && p.tier > maxEquipTierForRebirth(ch.rebirth ?? 0)
             const needRebirth = rebirthRequiredForEquipTier(p.tier)
+            const count = stack.items.length
             return `<div class="row-item">
-              <div class="row-main">${EQUIP_SLOT_LABEL[p.slot]} T${p.tier} · ${raritySpan(eq.rarity)} +${eq.level}${worn ? ' · 穿' : ''}</div>
+              <div class="row-main">${EQUIP_SLOT_LABEL[p.slot]} T${p.tier} · ${raritySpan(stack.rarity)} ${equipLevelLabel(stack.items)}${count > 1 ? ` · x${count}` : ''}${worn ? ' · 穿' : ''}</div>
               <div class="sub">${ownedEquipStatLine(eq)}</div>
               <div class="btn-row">
                 <button class="btn" data-act="equp" data-id="${eq.uid}">+Lv</button>
@@ -881,7 +892,7 @@ function roleRelicBlock(state: GameState, role: Role): string {
     (r) =>
       r.role === role &&
       (inv.has(r.id) || unlocked.some((u) => u.id === r.id) || cur === r.id),
-  )
+  ).sort((a, b) => b.needRebirth - a.needRebirth)
   return `<div class="panel">
     <div class="section-title">${ROLE_LABEL[role]} · 遺物</div>
     <div class="muted">職業特化遺物：僅本職可裝；依出戰角色轉生解鎖</div>
@@ -950,14 +961,108 @@ function rebirthBonusPanel(state: GameState): string {
   </div>`
 }
 
+function compareRarityDesc(a: Rarity, b: Rarity): number {
+  return rarityIndex(b) - rarityIndex(a)
+}
+
 function sortByRank(list: OwnedCharacter[]): OwnedCharacter[] {
   return [...list].sort((a, b) => {
-    const rd = rarityIndex(b.rarity) - rarityIndex(a.rarity)
+    const rd = compareRarityDesc(a.rarity, b.rarity)
     if (rd !== 0) return rd
     if (b.ascend !== a.ascend) return b.ascend - a.ascend
     if (b.level !== a.level) return b.level - a.level
     return CHAR_MAP[a.defId].name.localeCompare(CHAR_MAP[b.defId].name, 'zh-Hant')
   })
+}
+
+function compareOwnedSkill(a: OwnedSkill, b: OwnedSkill): number {
+  const rd = compareRarityDesc(a.rarity, b.rarity)
+  if (rd) return rd
+  if (b.level !== a.level) return b.level - a.level
+  const na = SKILL_MAP[a.skillId]?.name ?? ''
+  const nb = SKILL_MAP[b.skillId]?.name ?? ''
+  return na.localeCompare(nb, 'zh-Hant')
+}
+
+interface EquipStack {
+  slot: EquipSlot
+  tier: number
+  rarity: Rarity
+  items: OwnedEquip[]
+}
+
+/** 同部位同階同品質堆疊，列依品質→階→部位排序 */
+function stackEquipsByTier(list: OwnedEquip[]): EquipStack[] {
+  const buckets = new Map<string, OwnedEquip[]>()
+  for (const eq of list) {
+    const p = parseEquipDefId(eq.defId)
+    if (!p) continue
+    const key = `${p.slot}|${p.tier}|${eq.rarity}`
+    const arr = buckets.get(key) ?? []
+    arr.push(eq)
+    buckets.set(key, arr)
+  }
+  const stacks: EquipStack[] = []
+  for (const items of buckets.values()) {
+    items.sort((a, b) => b.level - a.level || a.uid.localeCompare(b.uid))
+    const p = parseEquipDefId(items[0].defId)!
+    stacks.push({ slot: p.slot, tier: p.tier, rarity: items[0].rarity, items })
+  }
+  stacks.sort((a, b) => {
+    const rd = compareRarityDesc(a.rarity, b.rarity)
+    if (rd) return rd
+    if (b.tier !== a.tier) return b.tier - a.tier
+    return EQUIP_SLOTS.indexOf(a.slot) - EQUIP_SLOTS.indexOf(b.slot)
+  })
+  return stacks
+}
+
+function equipLevelLabel(items: OwnedEquip[]): string {
+  const levels = items.map((i) => i.level)
+  const mn = Math.min(...levels)
+  const mx = Math.max(...levels)
+  return mn === mx ? `+${mn}` : `+${mn}~${mx}`
+}
+
+/** 後勤可指派／派遣：閒置優先，再高增效 */
+function sortLogisticsCandidates(list: OwnedCharacter[]): OwnedCharacter[] {
+  return [...list].sort((a, b) => {
+    const idleA = !a.workJob
+    const idleB = !b.workJob
+    if (idleA !== idleB) return idleA ? -1 : 1
+    const wb = workBoostMult(b) - workBoostMult(a)
+    if (wb !== 0) return wb
+    const bd = (b.boost ?? 0) - (a.boost ?? 0)
+    if (bd !== 0) return bd
+    if (b.level !== a.level) return b.level - a.level
+    return compareRarityDesc(a.rarity, b.rarity)
+  })
+}
+
+function sortByWorkEfficiency(list: OwnedCharacter[]): OwnedCharacter[] {
+  return [...list].sort((a, b) => {
+    const wb = workBoostMult(b) - workBoostMult(a)
+    if (wb !== 0) return wb
+    const bd = (b.boost ?? 0) - (a.boost ?? 0)
+    if (bd !== 0) return bd
+    return b.level - a.level
+  })
+}
+
+function stackSkillsForDisplay(bag: OwnedSkill[]): { rep: OwnedSkill; count: number }[] {
+  const buckets = new Map<string, OwnedSkill[]>()
+  for (const sk of bag) {
+    const key = `${sk.skillId}|${sk.rarity}|${sk.level}|${sk.books ?? 0}`
+    const arr = buckets.get(key) ?? []
+    arr.push(sk)
+    buckets.set(key, arr)
+  }
+  const groups = [...buckets.values()].map((items) => ({
+    rep: items[0],
+    count: items.length,
+  }))
+  groups.sort((a, b) => compareOwnedSkill(a.rep, b.rep))
+  return groups
 }
 
 function selectedTrainRole(state: GameState): Role {
@@ -970,7 +1075,7 @@ function selectedTrainRole(state: GameState): Role {
 }
 
 function roleDeployPicker(state: GameState, role: Role): string {
-  const pool = state.roster.filter((c) => CHAR_MAP[c.defId]?.role === role)
+  const pool = sortByRank(state.roster.filter((c) => CHAR_MAP[c.defId]?.role === role))
   if (!pool.length) return '<span class="muted">無此職角色</span>'
   return pool
     .map((ch) => {
@@ -1113,7 +1218,7 @@ function trainLoungeView(state: GameState): string {
         }
         if (filter === 'all' && list.length === 0) return ''
         return `<div class="panel">
-          <div class="section-title">${ROLE_LABEL[role]}（${list.length}）· 階級排序</div>
+          <div class="section-title">${ROLE_LABEL[role]}（${list.length}）· 品質排序</div>
           <div class="list">${list.map((c) => charCard(state, c, { showDeploy: true })).join('')}</div>
         </div>`
       })
@@ -1197,7 +1302,13 @@ function shopGachaView(state: GameState): string {
 }
 
 function shopResourceView(state: GameState): string {
-  const shopItems = (Object.keys(SHOP_RATES) as (keyof Resources)[]).filter((k) => k !== 'gold')
+  const shopItems = (Object.keys(SHOP_RATES) as (keyof Resources)[])
+    .filter((k) => k !== 'gold')
+    .sort((a, b) => {
+      const ra = RESOURCE_META.find((m) => m.key === a)?.rarity ?? '普通'
+      const rb = RESOURCE_META.find((m) => m.key === b)?.rarity ?? '普通'
+      return compareRarityDesc(ra, rb)
+    })
   return `
     <div class="panel">
       ${shopBackBtn()}
@@ -1226,17 +1337,13 @@ function shopResourceView(state: GameState): string {
 
 function shopCardsView(state: GameState): string {
   const filter = shopCardFilter()
-  const ownedCards = [...state.roster]
-    .filter((ch) => {
+  const ownedCards = sortByRank(
+    state.roster.filter((ch) => {
       const def = CHAR_MAP[ch.defId]
       if (!def) return false
       return filter === 'all' || def.role === filter
-    })
-    .sort((a, b) => {
-      const rd = rarityIndex(b.rarity) - rarityIndex(a.rarity)
-      if (rd !== 0) return rd
-      return (CHAR_MAP[a.defId]?.name ?? '').localeCompare(CHAR_MAP[b.defId]?.name ?? '', 'zh-Hant')
-    })
+    }),
+  )
   const countOf = (role: Role) => state.roster.filter((c) => CHAR_MAP[c.defId]?.role === role).length
 
   return `
@@ -1338,11 +1445,36 @@ function logisticsCraftSection(state: GameState): string {
   </div>`
 }
 
+const ROLE_SORT: Record<Role, number> = { warrior: 0, mage: 1, priest: 2 }
+const KIND_SORT: Record<SkillKind, number> = { attack: 0, defense: 1, support: 2 }
+
+function compareShopSkillEntry(
+  a: { def: { role: Role; kind: SkillKind; name: string }; rarity: Rarity },
+  b: { def: { role: Role; kind: SkillKind; name: string }; rarity: Rarity },
+): number {
+  const rd = compareRarityDesc(a.rarity, b.rarity)
+  if (rd) return rd
+  const rr = ROLE_SORT[a.def.role] - ROLE_SORT[b.def.role]
+  if (rr) return rr
+  const kr = KIND_SORT[a.def.kind] - KIND_SORT[b.def.kind]
+  if (kr) return kr
+  return a.def.name.localeCompare(b.def.name, 'zh-Hant')
+}
+
 function shopSkillsView(state: GameState): string {
   const filter = shopSkillFilter()
-  const catalog = shopSkillCatalog().filter((x) => filter === 'all' || x.def.role === filter)
+  const catalog = shopSkillCatalog()
+    .filter((x) => filter === 'all' || x.def.role === filter)
+    .sort(compareShopSkillEntry)
   const countOf = (role: Role) => shopSkillCatalog().filter((x) => x.def.role === role).length
-  const antiPool = antiKingSkills().filter((d) => filter === 'all' || d.role === filter)
+  const antiPool = antiKingSkills()
+    .filter((d) => filter === 'all' || d.role === filter)
+    .sort(
+      (a, b) =>
+        ROLE_SORT[a.role] - ROLE_SORT[b.role] ||
+        KIND_SORT[a.kind] - KIND_SORT[b.kind] ||
+        a.name.localeCompare(b.name, 'zh-Hant'),
+    )
   const ownedAnti = new Set(
     state.skillItems.filter((s) => SKILL_MAP[s.skillId]?.source === 'antiKing').map((s) => s.skillId),
   )
@@ -1419,8 +1551,8 @@ function gachaView(state: GameState): string {
 
 function logisticsDispatchSection(state: GameState): string {
   const fighting = fightingUids(state)
-  const available = state.roster.filter(
-    (ch) => !fighting.has(ch.uid) && !ch.workJob && !isOnDispatch(ch),
+  const available = sortLogisticsCandidates(
+    state.roster.filter((ch) => !fighting.has(ch.uid) && !ch.workJob && !isOnDispatch(ch)),
   )
   const active = (state.dispatches ?? []).filter((d) => d.endsAt > Date.now())
   const cap = dispatchSlotCap(state.floors.main)
@@ -1454,7 +1586,7 @@ function logisticsDispatchSection(state: GameState): string {
               .map((ch) => {
                 const def = CHAR_MAP[ch.defId]
                 return `<div class="row-item">
-                <div class="row-main">${nameSpan(def.name, ch.rarity)}</div>
+                <div class="row-main">${nameSpan(def.name, ch.rarity)} · 增效${ch.boost}（${workBoostMult(ch).toFixed(2)}x）</div>
                 <div class="btn-row">
                   ${DISPATCH_OPTIONS.map((o) => {
                     const scaled = scaleDispatchReward(o.reward, state.floors.main)
@@ -1514,7 +1646,9 @@ function logisticsStationsView(state: GameState): string {
     </div>
     <div class="station-grid">
       ${WORK_JOBS.map((job) => {
-        const workers = state.roster.filter((ch) => ch.workJob === job && !fighting.has(ch.uid))
+        const workers = sortByWorkEfficiency(
+          state.roster.filter((ch) => ch.workJob === job && !fighting.has(ch.uid)),
+        )
         const previews = workers.slice(0, 3)
         const resKey = WORK_RES_KEY[job]
         const resMeta = RESOURCE_META.find((m) => m.key === resKey)
@@ -1553,14 +1687,87 @@ function logisticsStationsView(state: GameState): string {
   `
 }
 
+function workCharCard(
+  ch: OwnedCharacter,
+  opts: { job: WorkJob; mode: 'assign' | 'remove' | 'transfer'; full: boolean; elsewhere?: string },
+): string {
+  const def = CHAR_MAP[ch.defId]
+  if (!def) return ''
+  const sub =
+    opts.mode === 'remove'
+      ? `增效${ch.boost}（${workBoostMult(ch).toFixed(2)}x）· ${ROLE_LABEL[def.role]} · 本工位`
+      : `${ROLE_LABEL[def.role]} · ${opts.elsewhere ?? '閒置'} · 增效${ch.boost}（${workBoostMult(ch).toFixed(2)}x）`
+  const btn =
+    opts.mode === 'remove'
+      ? `<button class="btn tap-target" data-act="work" data-id="${ch.uid}">撤下</button>`
+      : `<button class="btn primary tap-target" data-act="work" data-id="${ch.uid}" data-job="${opts.job}" ${opts.full ? 'disabled' : ''}>${opts.full ? '工位已滿' : opts.mode === 'transfer' ? '調入' : '加入工位'}</button>`
+  return `<div class="card stack-card">
+    <img src="${def.portrait}" alt="${def.name}" />
+    <div class="body">
+      <div class="title">${nameSpan(def.name, ch.rarity)} · Lv.${ch.level}</div>
+      <div class="sub">${sub}</div>
+      <div class="btn-row" style="margin-top:6px">${btn}</div>
+      <div class="stack-count">x${Math.max(1, ch.count ?? 1)}</div>
+    </div>
+  </div>`
+}
+
 function logisticsDetailView(state: GameState, job: WorkJob): string {
   const fighting = fightingUids(state)
   const stationCap = workStationCap(state.floors.main)
-  const workers = state.roster.filter((ch) => ch.workJob === job && !fighting.has(ch.uid))
-  const available = state.roster.filter((ch) => !fighting.has(ch.uid) && ch.workJob !== job)
+  const workers = sortByWorkEfficiency(
+    state.roster.filter((ch) => ch.workJob === job && !fighting.has(ch.uid) && !isOnDispatch(ch)),
+  )
+  const idle = sortByWorkEfficiency(
+    state.roster.filter(
+      (ch) => !fighting.has(ch.uid) && !ch.workJob && !isOnDispatch(ch),
+    ),
+  )
+  const elsewhere = sortByWorkEfficiency(
+    state.roster.filter(
+      (ch) =>
+        !fighting.has(ch.uid) &&
+        !!ch.workJob &&
+        ch.workJob !== job &&
+        !isOnDispatch(ch),
+    ),
+  )
   const full = workers.length >= stationCap
+  const tab = workPickTab()
   const resKey = WORK_RES_KEY[job]
   const resMeta = RESOURCE_META.find((m) => m.key === resKey)
+  const assignedCount = workers.length + elsewhere.length
+
+  const idleList = idle.length
+    ? `<div class="list">${idle.map((ch) => workCharCard(ch, { job, mode: 'assign', full })).join('')}</div>`
+    : '<p class="muted">目前沒有未指派角色（出戰／派遣中不顯示）。</p>'
+
+  const assignedList =
+    assignedCount
+      ? `<div class="list">
+          ${
+            workers.length
+              ? `<div class="muted" style="margin:6px 0 4px">本工位 · ${workers.length}/${stationCap}</div>${workers
+                  .map((ch) => workCharCard(ch, { job, mode: 'remove', full }))
+                  .join('')}`
+              : '<div class="muted" style="margin:6px 0 4px">本工位尚無員工</div>'
+          }
+          ${
+            elsewhere.length
+              ? `<div class="muted" style="margin:10px 0 4px">其他工位 · ${elsewhere.length}</div>${elsewhere
+                  .map((ch) =>
+                    workCharCard(ch, {
+                      job,
+                      mode: 'transfer',
+                      full,
+                      elsewhere: ch.workJob ? WORK_LABEL[ch.workJob] : '已指派',
+                    }),
+                  )
+                  .join('')}`
+              : ''
+          }
+        </div>`
+      : '<p class="muted">目前沒有已指派角色。</p>'
 
   return `
     <div class="panel">
@@ -1568,53 +1775,14 @@ function logisticsDetailView(state: GameState, job: WorkJob): string {
       <div class="section-title">${WORK_LABEL[job]}工位</div>
       <p class="muted">${WORK_DESC[job]} · ${resMeta?.name ?? ''} 庫存 ${formatNum(state.resources[resKey])}</p>
       <p class="muted">在職 ${workers.length}/${stationCap} · 超出人數不產物（依增效／等級優先）</p>
+      <div class="btn-row loadout-tabs work-pick-tabs" style="margin-top:10px">
+        <button class="btn ${tab === 'idle' ? 'primary' : ''}" data-act="workpick" data-tab="idle">未指派 ${idle.length}</button>
+        <button class="btn ${tab === 'assigned' ? 'primary' : ''}" data-act="workpick" data-tab="assigned">已指派 ${assignedCount}</button>
+      </div>
     </div>
     <div class="panel">
-      <div class="section-title">在職員工</div>
-      ${
-        workers.length
-          ? `<div class="list">${workers
-              .map((ch) => {
-                const def = CHAR_MAP[ch.defId]
-                return `<div class="card stack-card">
-                  <img src="${def.portrait}" alt="${def.name}" />
-                  <div class="body">
-                    <div class="title">${nameSpan(def.name, ch.rarity)} · Lv.${ch.level}</div>
-                    <div class="sub">增效${ch.boost}（${workBoostMult(ch).toFixed(2)}x）· ${ROLE_LABEL[def.role]}</div>
-                    <div class="btn-row" style="margin-top:6px">
-                      <button class="btn tap-target" data-act="work" data-id="${ch.uid}">撤下</button>
-                    </div>
-                    <div class="stack-count">x${Math.max(1, ch.count ?? 1)}</div>
-                  </div>
-                </div>`
-              })
-              .join('')}</div>`
-          : '<p class="muted">尚無員工，從下方選擇角色加入。</p>'
-      }
-    </div>
-    <div class="panel">
-      <div class="section-title">可指派角色</div>
-      ${
-        available.length
-          ? `<div class="list">${available
-              .map((ch) => {
-                const def = CHAR_MAP[ch.defId]
-                const elsewhere = ch.workJob ? WORK_LABEL[ch.workJob] : '閒置'
-                return `<div class="card stack-card">
-                  <img src="${def.portrait}" alt="${def.name}" />
-                  <div class="body">
-                    <div class="title">${nameSpan(def.name, ch.rarity)} · Lv.${ch.level}</div>
-                    <div class="sub">${ROLE_LABEL[def.role]} · ${elsewhere} · 增效${ch.boost}</div>
-                    <div class="btn-row" style="margin-top:6px">
-                      <button class="btn primary tap-target" data-act="work" data-id="${ch.uid}" data-job="${job}" ${full ? 'disabled' : ''}>${full ? '工位已滿' : '加入工位'}</button>
-                    </div>
-                    <div class="stack-count">x${Math.max(1, ch.count ?? 1)}</div>
-                  </div>
-                </div>`
-              })
-              .join('')}</div>`
-          : '<p class="muted">沒有可指派角色（出戰中或已全在此工位）。</p>'
-      }
+      <div class="section-title">${tab === 'idle' ? '未指派 · 高增效優先' : '已指派 · 本工位／其他工位'}</div>
+      ${tab === 'idle' ? idleList : assignedList}
     </div>
   `
 }
@@ -1634,7 +1802,11 @@ function dexPool(filter: DexFilter) {
 
 function dexView(state: GameState): string {
   const activeFilter = (window as unknown as { __dexFilter?: DexFilter }).__dexFilter ?? 'all'
-  const pool = dexPool(activeFilter)
+  const pool = [...dexPool(activeFilter)].sort(
+    (a, b) =>
+      compareRarityDesc(a.rarity, b.rarity) ||
+      a.name.localeCompare(b.name, 'zh-Hant'),
+  )
   const owned = new Set(state.dex)
   const got = pool.filter((c) => owned.has(c.id)).length
   const seriesLabel = (s?: string) =>
@@ -2490,12 +2662,20 @@ function bind(root: HTMLElement) {
         const job = (el as HTMLElement).dataset.job as WorkJob
         ;(window as unknown as { __logisticsPage?: LogisticsPage }).__logisticsPage = 'detail'
         ;(window as unknown as { __logisticsJob?: WorkJob | null }).__logisticsJob = job
+        ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = 'idle'
         actions.setTab('logistics')
       }
       if (act === 'logistics-back') {
         ;(window as unknown as { __logisticsPage?: LogisticsPage }).__logisticsPage = 'stations'
         ;(window as unknown as { __logisticsJob?: WorkJob | null }).__logisticsJob = null
+        ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = 'idle'
         actions.setTab('logistics')
+      }
+      if (act === 'workpick') {
+        const t = (el as HTMLElement).dataset.tab as WorkPickTab
+        if (t === 'idle' || t === 'assigned') {
+          ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = t
+        }
       }
       if (act === 'work' && id) {
         const err = actions.assignWork(id, (el as HTMLElement).dataset.job as WorkJob | undefined)
