@@ -156,6 +156,7 @@ const navIndCache: { tab: GameState['tab'] | null; x: number; w: number } = {
   w: 22,
 }
 type LogisticsPage = 'stations' | 'detail'
+type WorkPickTab = 'idle' | 'assigned'
 
 function logisticsPage(): LogisticsPage {
   return (window as unknown as { __logisticsPage?: LogisticsPage }).__logisticsPage ?? 'stations'
@@ -163,6 +164,10 @@ function logisticsPage(): LogisticsPage {
 
 function logisticsJob(): WorkJob | null {
   return (window as unknown as { __logisticsJob?: WorkJob | null }).__logisticsJob ?? null
+}
+
+function workPickTab(): WorkPickTab {
+  return (window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab ?? 'idle'
 }
 
 function escapeHtml(s: string): string {
@@ -1670,18 +1675,87 @@ function logisticsStationsView(state: GameState): string {
   `
 }
 
+function workCharCard(
+  ch: OwnedCharacter,
+  opts: { job: WorkJob; mode: 'assign' | 'remove' | 'transfer'; full: boolean; elsewhere?: string },
+): string {
+  const def = CHAR_MAP[ch.defId]
+  if (!def) return ''
+  const sub =
+    opts.mode === 'remove'
+      ? `增效${ch.boost}（${workBoostMult(ch).toFixed(2)}x）· ${ROLE_LABEL[def.role]} · 本工位`
+      : `${ROLE_LABEL[def.role]} · ${opts.elsewhere ?? '閒置'} · 增效${ch.boost}（${workBoostMult(ch).toFixed(2)}x）`
+  const btn =
+    opts.mode === 'remove'
+      ? `<button class="btn tap-target" data-act="work" data-id="${ch.uid}">撤下</button>`
+      : `<button class="btn primary tap-target" data-act="work" data-id="${ch.uid}" data-job="${opts.job}" ${opts.full ? 'disabled' : ''}>${opts.full ? '工位已滿' : opts.mode === 'transfer' ? '調入' : '加入工位'}</button>`
+  return `<div class="card stack-card">
+    <img src="${def.portrait}" alt="${def.name}" />
+    <div class="body">
+      <div class="title">${nameSpan(def.name, ch.rarity)} · Lv.${ch.level}</div>
+      <div class="sub">${sub}</div>
+      <div class="btn-row" style="margin-top:6px">${btn}</div>
+      <div class="stack-count">x${Math.max(1, ch.count ?? 1)}</div>
+    </div>
+  </div>`
+}
+
 function logisticsDetailView(state: GameState, job: WorkJob): string {
   const fighting = fightingUids(state)
   const stationCap = workStationCap(state.floors.main)
   const workers = sortByWorkEfficiency(
-    state.roster.filter((ch) => ch.workJob === job && !fighting.has(ch.uid)),
+    state.roster.filter((ch) => ch.workJob === job && !fighting.has(ch.uid) && !isOnDispatch(ch)),
   )
-  const available = sortLogisticsCandidates(
-    state.roster.filter((ch) => !fighting.has(ch.uid) && ch.workJob !== job),
+  const idle = sortByWorkEfficiency(
+    state.roster.filter(
+      (ch) => !fighting.has(ch.uid) && !ch.workJob && !isOnDispatch(ch),
+    ),
+  )
+  const elsewhere = sortByWorkEfficiency(
+    state.roster.filter(
+      (ch) =>
+        !fighting.has(ch.uid) &&
+        !!ch.workJob &&
+        ch.workJob !== job &&
+        !isOnDispatch(ch),
+    ),
   )
   const full = workers.length >= stationCap
+  const tab = workPickTab()
   const resKey = WORK_RES_KEY[job]
   const resMeta = RESOURCE_META.find((m) => m.key === resKey)
+  const assignedCount = workers.length + elsewhere.length
+
+  const idleList = idle.length
+    ? `<div class="list">${idle.map((ch) => workCharCard(ch, { job, mode: 'assign', full })).join('')}</div>`
+    : '<p class="muted">目前沒有未指派角色（出戰／派遣中不顯示）。</p>'
+
+  const assignedList =
+    assignedCount
+      ? `<div class="list">
+          ${
+            workers.length
+              ? `<div class="muted" style="margin:6px 0 4px">本工位 · ${workers.length}/${stationCap}</div>${workers
+                  .map((ch) => workCharCard(ch, { job, mode: 'remove', full }))
+                  .join('')}`
+              : '<div class="muted" style="margin:6px 0 4px">本工位尚無員工</div>'
+          }
+          ${
+            elsewhere.length
+              ? `<div class="muted" style="margin:10px 0 4px">其他工位 · ${elsewhere.length}</div>${elsewhere
+                  .map((ch) =>
+                    workCharCard(ch, {
+                      job,
+                      mode: 'transfer',
+                      full,
+                      elsewhere: ch.workJob ? WORK_LABEL[ch.workJob] : '已指派',
+                    }),
+                  )
+                  .join('')}`
+              : ''
+          }
+        </div>`
+      : '<p class="muted">目前沒有已指派角色。</p>'
 
   return `
     <div class="panel">
@@ -1689,53 +1763,14 @@ function logisticsDetailView(state: GameState, job: WorkJob): string {
       <div class="section-title">${WORK_LABEL[job]}工位</div>
       <p class="muted">${WORK_DESC[job]} · ${resMeta?.name ?? ''} 庫存 ${formatNum(state.resources[resKey])}</p>
       <p class="muted">在職 ${workers.length}/${stationCap} · 超出人數不產物（依增效／等級優先）</p>
+      <div class="btn-row loadout-tabs work-pick-tabs" style="margin-top:10px">
+        <button class="btn ${tab === 'idle' ? 'primary' : ''}" data-act="workpick" data-tab="idle">未指派 ${idle.length}</button>
+        <button class="btn ${tab === 'assigned' ? 'primary' : ''}" data-act="workpick" data-tab="assigned">已指派 ${assignedCount}</button>
+      </div>
     </div>
     <div class="panel">
-      <div class="section-title">在職員工</div>
-      ${
-        workers.length
-          ? `<div class="list">${workers
-              .map((ch) => {
-                const def = CHAR_MAP[ch.defId]
-                return `<div class="card stack-card">
-                  <img src="${def.portrait}" alt="${def.name}" />
-                  <div class="body">
-                    <div class="title">${nameSpan(def.name, ch.rarity)} · Lv.${ch.level}</div>
-                    <div class="sub">增效${ch.boost}（${workBoostMult(ch).toFixed(2)}x）· ${ROLE_LABEL[def.role]}</div>
-                    <div class="btn-row" style="margin-top:6px">
-                      <button class="btn tap-target" data-act="work" data-id="${ch.uid}">撤下</button>
-                    </div>
-                    <div class="stack-count">x${Math.max(1, ch.count ?? 1)}</div>
-                  </div>
-                </div>`
-              })
-              .join('')}</div>`
-          : '<p class="muted">尚無員工，從下方選擇角色加入。</p>'
-      }
-    </div>
-    <div class="panel">
-      <div class="section-title">可指派角色</div>
-      ${
-        available.length
-          ? `<div class="list">${available
-              .map((ch) => {
-                const def = CHAR_MAP[ch.defId]
-                const elsewhere = ch.workJob ? WORK_LABEL[ch.workJob] : '閒置'
-                return `<div class="card stack-card">
-                  <img src="${def.portrait}" alt="${def.name}" />
-                  <div class="body">
-                    <div class="title">${nameSpan(def.name, ch.rarity)} · Lv.${ch.level}</div>
-                    <div class="sub">${ROLE_LABEL[def.role]} · ${elsewhere} · 增效${ch.boost}（${workBoostMult(ch).toFixed(2)}x）</div>
-                    <div class="btn-row" style="margin-top:6px">
-                      <button class="btn primary tap-target" data-act="work" data-id="${ch.uid}" data-job="${job}" ${full ? 'disabled' : ''}>${full ? '工位已滿' : '加入工位'}</button>
-                    </div>
-                    <div class="stack-count">x${Math.max(1, ch.count ?? 1)}</div>
-                  </div>
-                </div>`
-              })
-              .join('')}</div>`
-          : '<p class="muted">沒有可指派角色（出戰中或已全在此工位）。</p>'
-      }
+      <div class="section-title">${tab === 'idle' ? '未指派 · 高增效優先' : '已指派 · 本工位／其他工位'}</div>
+      ${tab === 'idle' ? idleList : assignedList}
     </div>
   `
 }
@@ -2615,12 +2650,20 @@ function bind(root: HTMLElement) {
         const job = (el as HTMLElement).dataset.job as WorkJob
         ;(window as unknown as { __logisticsPage?: LogisticsPage }).__logisticsPage = 'detail'
         ;(window as unknown as { __logisticsJob?: WorkJob | null }).__logisticsJob = job
+        ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = 'idle'
         actions.setTab('logistics')
       }
       if (act === 'logistics-back') {
         ;(window as unknown as { __logisticsPage?: LogisticsPage }).__logisticsPage = 'stations'
         ;(window as unknown as { __logisticsJob?: WorkJob | null }).__logisticsJob = null
+        ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = 'idle'
         actions.setTab('logistics')
+      }
+      if (act === 'workpick') {
+        const t = (el as HTMLElement).dataset.tab as WorkPickTab
+        if (t === 'idle' || t === 'assigned') {
+          ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = t
+        }
       }
       if (act === 'work' && id) {
         const err = actions.assignWork(id, (el as HTMLElement).dataset.job as WorkJob | undefined)
