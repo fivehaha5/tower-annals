@@ -1,7 +1,7 @@
 /**
  * 長線掛機平衡 Monte Carlo（CLI）
  *
- * 重用真實 battleTick / clearRewards / skillUpgradeCost，避免平行假公式。
+ * 重用真實 battleTick / clearRewards / skillUpgradeCost / skillAscendCost，避免平行假公式。
  * 執行：npm run sim:balance
  */
 import { createBattle, teamPower } from '../src/game/combat.ts'
@@ -12,6 +12,7 @@ import {
   skillLevelPowerBonus,
 } from '../src/game/balance.ts'
 import {
+  ascendSkill,
   chooseStarters,
   createNewState,
   getState,
@@ -23,14 +24,15 @@ import {
   simulateTicks,
   upgradeSkill,
 } from '../src/game/state.ts'
-import { skillUpgradeCost } from '../src/game/util.ts'
+import { nextRarity, skillAscendCost, skillUpgradeCost } from '../src/game/util.ts'
 import type { IdleMode } from '../src/game/types.ts'
 
 type PathProfile = {
   name: string
   hours: number
   focus: 'pushMain' | 'farmBlueprint' | 'farmSkill' | 'farmHunt' | 'grindStuck'
-  spendSkillCards: boolean
+  /** 自動：精華升級＋技能卡升階 */
+  spendSkillGrowth: boolean
   /** grindStuck：相對戰力倍率，1=同戰力層附近 */
   stuckPowerRatio?: number
 }
@@ -44,9 +46,11 @@ type RunStats = {
   huntFloor: number
   crystal: number
   blueprint: number
+  essence: number
   skillbook: number
   kingBadge: number
   skillLevels: number[]
+  skillRarities: string[]
   teamCp: number
   enemyCpAtFarm: number
   floorsCleared: number
@@ -69,7 +73,21 @@ function snapshotSkillLevels(): number[] {
   return levels
 }
 
-function trySpendSkillCards() {
+function snapshotSkillRarities(): string[] {
+  const s = getState()
+  const rarities: string[] = []
+  for (const role of ['warrior', 'mage', 'priest'] as const) {
+    for (const kind of ['attack', 'defense', 'support'] as const) {
+      const uid = s.loadouts[role]?.skills?.[kind]
+      const sk = s.skillItems.find((x) => x.uid === uid)
+      if (sk) rarities.push(sk.rarity)
+    }
+  }
+  return rarities
+}
+
+/** 精華升級 → 技能卡升階（稀有度） */
+function trySpendSkillGrowth() {
   const s = getState()
   let progressed = true
   while (progressed) {
@@ -80,10 +98,18 @@ function trySpendSkillCards() {
         if (!uid) continue
         const sk = s.skillItems.find((x) => x.uid === uid)
         if (!sk) continue
-        const cost = skillUpgradeCost(sk.level)
-        if (s.resources.skillbook < cost) continue
-        const err = upgradeSkill(uid)
-        if (!err) progressed = true
+        const upCost = skillUpgradeCost(sk.level)
+        if (s.resources.essence >= upCost) {
+          const err = upgradeSkill(uid)
+          if (!err) {
+            progressed = true
+            continue
+          }
+        }
+        if (nextRarity(sk.rarity) && s.resources.skillbook >= skillAscendCost(sk.rarity)) {
+          const err = ascendSkill(uid)
+          if (!err) progressed = true
+        }
       }
     }
   }
@@ -125,6 +151,7 @@ function runPath(profile: PathProfile): RunStats {
   s0.resources.crystal += 8000
   s0.resources.gold += 800
   s0.resources.blueprint += 80
+  s0.resources.essence += 400
   s0.resources.skillbook += 200
   autoLevelRoster()
 
@@ -196,7 +223,7 @@ function runPath(profile: PathProfile): RunStats {
     }
 
     autoLevelRoster()
-    if (profile.spendSkillCards) trySpendSkillCards()
+    if (profile.spendSkillGrowth) trySpendSkillGrowth()
 
     for (let i = 0; i < step; i++) {
       const before = getState()
@@ -241,9 +268,11 @@ function runPath(profile: PathProfile): RunStats {
     huntFloor: end.floors.hunt,
     crystal: Math.floor(end.resources.crystal),
     blueprint: Math.floor(end.resources.blueprint),
+    essence: Math.floor(end.resources.essence),
     skillbook: Math.floor(end.resources.skillbook),
     kingBadge: Math.floor(end.resources.kingBadge ?? 0),
     skillLevels: snapshotSkillLevels(),
+    skillRarities: snapshotSkillRarities(),
     teamCp: teamPower(end),
     enemyCpAtFarm: enemyTargetPower(mode, farm),
     floorsCleared,
@@ -263,22 +292,24 @@ function fmt(n: number): string {
 
 function main() {
   const profiles: PathProfile[] = [
-    { name: '主塔沖層 48h', hours: 48, focus: 'pushMain', spendSkillCards: true },
-    { name: '副塔刷藍圖 24h', hours: 24, focus: 'farmBlueprint', spendSkillCards: false },
-    { name: '技能本刷卡 24h', hours: 24, focus: 'farmSkill', spendSkillCards: true },
-    { name: '討伐刷破王徽 12h', hours: 12, focus: 'farmHunt', spendSkillCards: false },
+    { name: '主塔沖層 48h', hours: 48, focus: 'pushMain', spendSkillGrowth: true },
+    { name: '副塔刷藍圖 24h', hours: 24, focus: 'farmBlueprint', spendSkillGrowth: false },
+    { name: '技能本刷卡 24h', hours: 24, focus: 'farmSkill', spendSkillGrowth: true },
+    { name: '討伐刷破王徽 12h', hours: 12, focus: 'farmHunt', spendSkillGrowth: false },
     {
       name: '近戰力磨關 8h',
       hours: 8,
       focus: 'grindStuck',
-      spendSkillCards: false,
+      spendSkillGrowth: false,
       // 敵略弱：可磨很久但不穩殺 → 測暴走打斷
       stuckPowerRatio: 0.88,
     },
   ]
 
   console.log('=== 《異塔編年》平衡 Monte Carlo ===')
-  console.log(`技能 CD=2 · 暴走≥${BERSERK_AFTER_ROUNDS} 回合 · 技能強化=質數×100 技能卡`)
+  console.log(
+    `技能 CD=2 · 暴走≥${BERSERK_AFTER_ROUNDS} 回合 · 升級=精華 · 升階=質數×100 技能卡`,
+  )
   console.log(
     `Lv10 技能強度加成 ≈ ${(skillLevelPowerBonus(10) * 100).toFixed(1)}%（舊線性約 110%）`,
   )
@@ -293,10 +324,10 @@ function main() {
       `主塔 ${r.mainFloor}F · 副塔 ${r.blueprintFloor}F · 技能本 ${r.skillFloor}F · 討伐 ${r.huntFloor}F · 清層≈${r.floorsCleared}`,
     )
     console.log(
-      `資源 水晶 ${fmt(r.crystal)} · 藍圖 ${fmt(r.blueprint)} · 技能卡 ${fmt(r.skillbook)} · 破王徽 ${fmt(r.kingBadge)}`,
+      `資源 水晶 ${fmt(r.crystal)} · 藍圖 ${fmt(r.blueprint)} · 精華 ${fmt(r.essence)} · 技能卡 ${fmt(r.skillbook)} · 破王徽 ${fmt(r.kingBadge)}`,
     )
     console.log(
-      `戰力 隊 ${fmt(r.teamCp)} vs 掛機敵 ${fmt(r.enemyCpAtFarm)} · 技能Lv [${r.skillLevels.join(',')}]`,
+      `戰力 隊 ${fmt(r.teamCp)} vs 掛機敵 ${fmt(r.enemyCpAtFarm)} · 技能Lv [${r.skillLevels.join(',')}] · 階 [${r.skillRarities.join(',')}]`,
     )
     console.log(
       `戰敗 ${r.deaths} · 暴走tick ${r.berserkSeen} · 最長回合 ${r.maxRoundsSeen} · 被暴走打斷=${r.grindFailedByBerserk}`,
@@ -315,7 +346,7 @@ function main() {
     const avg =
       push.skillLevels.reduce((a, b) => a + b, 0) / Math.max(1, push.skillLevels.length)
     console.log(
-      `· 48h 沖層可達主塔 ~${push.mainFloor}F，水晶 ${fmt(push.crystal)}，藍圖 ${fmt(push.blueprint)}，技能平均 Lv ${avg.toFixed(1)}`,
+      `· 48h 沖層可達主塔 ~${push.mainFloor}F，水晶 ${fmt(push.crystal)}，藍圖 ${fmt(push.blueprint)}，精華 ${fmt(push.essence)}，技能平均 Lv ${avg.toFixed(1)}`,
     )
   }
   if (bp) {
@@ -323,7 +354,7 @@ function main() {
   }
   if (sk) {
     console.log(
-      `· 24h 技能本路徑技能卡 ${fmt(sk.skillbook)}，技能Lv [${sk.skillLevels.join(',')}]`,
+      `· 24h 技能本路徑技能卡 ${fmt(sk.skillbook)}／精華 ${fmt(sk.essence)}，技能Lv [${sk.skillLevels.join(',')}]，階 [${sk.skillRarities.join(',')}]`,
     )
   }
   if (hunt) {

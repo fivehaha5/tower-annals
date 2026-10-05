@@ -58,7 +58,7 @@ import {
   rarityIndex,
   rebirthRequiredForEquipTier,
   shopSkillCost,
-  skillAscendCardCost,
+  skillAscendCost,
   skillUpgradeCost,
 } from '../game/util'
 import type {
@@ -732,17 +732,18 @@ function roleSkillBlock(state: GameState, role: Role): string {
     const sd = SKILL_MAP[s.skillId]
     const upCost = skillUpgradeCost(s.level)
     const canAsc = !!nextRarity(s.rarity)
-    const cardCost = skillAscendCardCost(s.rarity)
-    const canPayCards = stack >= cardCost + 1
+    const ascCost = skillAscendCost(s.rarity)
+    const canPayEssence = state.resources.essence >= upCost
+    const canPayAsc = state.resources.skillbook >= ascCost
     const tip = sd ? skillEffectLine(sd) : ''
     return `<div style="margin-top:8px">
       <div class="muted">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '?'} ${raritySpan(s.rarity)} Lv.${s.level}${sd?.source === 'antiKing' ? ' · 克制王階' : ''}</div>
       ${sd ? `<div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(sd))}${skillSpecialLine(sd) ? ` · ${escapeHtml(skillSpecialLine(sd))}` : ''}</div><div class="muted" style="font-size:11px">${escapeHtml(sd.desc)}</div>` : ''}
       <div class="btn-row" style="margin-top:4px">
-        <button class="btn" data-act="skillup" data-id="${s.uid}">強化(${formatNum(upCost)}技能卡)</button>
+        <button class="btn" data-act="skillup" data-id="${s.uid}" ${canPayEssence ? '' : 'disabled'}>升級(${formatNum(upCost)}精華)</button>
         ${
           canAsc
-            ? `<button class="btn" data-act="skillasc" data-id="${s.uid}" data-char="${ch?.uid ?? ''}" ${canPayCards ? '' : 'disabled'}>升階(耗${cardCost}張同名)</button>`
+            ? `<button class="btn" data-act="skillasc" data-id="${s.uid}" ${canPayAsc ? '' : 'disabled'}>升階(${formatNum(ascCost)}技能卡)</button>`
             : `<button class="btn" disabled>升階(已滿)</button>`
         }
         <button class="btn" data-act="skillunequip-role" data-role="${role}" data-kind="${kind}">卸下</button>
@@ -756,13 +757,23 @@ function roleSkillBlock(state: GameState, role: Role): string {
       .map((sk) => {
         const sd = SKILL_MAP[sk.skillId]!
         const tip = skillEffectLine(sd)
+        const bagUpCost = skillUpgradeCost(sk.level)
+        const bagCanUp = state.resources.essence >= bagUpCost
+        const bagAsc = nextRarity(sk.rarity)
+        const bagAscCost = skillAscendCost(sk.rarity)
+        const bagCanAsc = !!bagAsc && state.resources.skillbook >= bagAscCost
         return `<div class="row-item">
           <div class="row-main">${sd.unique ? '★' : ''}${sd.name} · ${raritySpan(sk.rarity)} Lv.${sk.level}${sd.source === 'antiKing' ? ' · 克制王階' : ''}</div>
           <div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(sd))}${skillSpecialLine(sd) ? ` · ${escapeHtml(skillSpecialLine(sd))}` : ''}</div>
           <div class="muted" style="font-size:11px">${escapeHtml(sd.desc)}</div>
           <div class="btn-row">
             <button class="btn primary" data-act="skillequip-role" data-role="${role}" data-skill="${sk.uid}">裝上</button>
-            <button class="btn" data-act="skillup" data-id="${sk.uid}">+Lv</button>
+            <button class="btn" data-act="skillup" data-id="${sk.uid}" ${bagCanUp ? '' : 'disabled'}>升級(${formatNum(bagUpCost)}精華)</button>
+            ${
+              bagAsc
+                ? `<button class="btn" data-act="skillasc" data-id="${sk.uid}" ${bagCanAsc ? '' : 'disabled'}>升階(${formatNum(bagAscCost)}技能卡)</button>`
+                : ''
+            }
           </div>
         </div>`
       })
@@ -770,7 +781,7 @@ function roleSkillBlock(state: GameState, role: Role): string {
 
   return `
     <div class="card"><div class="body">
-      <div class="title">已裝技能 · 同名卡 x${stack}</div>
+      <div class="title">已裝技能 · 角色同名卡 x${stack}（增效用）</div>
       ${slots}
     </div></div>
     <div class="card" style="margin-top:8px"><div class="body">
@@ -1205,7 +1216,7 @@ function shopCardsView(state: GameState): string {
     <div class="panel">
       ${shopBackBtn()}
       <div class="section-title">同名卡高額兌換</div>
-      <div class="muted">僅限已擁有角色。金鑽大量消耗換取堆疊，供增效／技能升階 · 持有金鑽 ${formatNum(state.resources.gold)}</div>
+      <div class="muted">僅限已擁有角色。金鑽大量消耗換取堆疊，供增效 · 持有金鑽 ${formatNum(state.resources.gold)}</div>
       <div class="btn-row" style="margin-top:8px">
         <button class="btn ${filter === 'all' ? 'primary' : ''}" data-act="shopcardfilter" data-filter="all">全部 ${state.roster.length}</button>
         <button class="btn ${filter === 'warrior' ? 'primary' : ''}" data-act="shopcardfilter" data-filter="warrior">戰士 ${countOf('warrior')}</button>
@@ -1341,7 +1352,7 @@ function shopSkillsView(state: GameState): string {
               <div class="btn-row" style="margin-top:6px">
                 ${
                   owned
-                    ? `<button class="btn" disabled>已持有 · 請至養成強化</button>`
+                    ? `<button class="btn" disabled>已持有 · 請至養成升級／升階</button>`
                     : `<button class="btn primary" data-act="exchange-antiking" data-skill="${def.id}" ${canPay ? '' : 'disabled'}>兌換</button>`
                 }
               </div>
@@ -1664,10 +1675,10 @@ function gameGuideModal(): string {
       <p><strong>爬塔</strong>：主塔／副塔／技能本／討伐訓練可沖層或原地刷（副塔／技能本／討伐每 5 層小首領）；技能本主產技能卡（主塔 ${SKILL_DUNGEON_UNLOCK} 解鎖）；討伐訓練主產破王徽（首通王階後解鎖）。戰敗會扣水晶／金鑽。王塔／神王可空刷（低機率）或定向（水晶＋技能卡隨輪迴遞增）；資源不足會改回空刷。</p>
       <p><strong>職業編隊</strong>：戰士、法師、牧師各有獨立 loadout——出戰角色、七部位裝備、三技能格、遺物。換角色不改裝備配置。</p>
       <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），高品機率偏低；強化只加等級，不能事後升品。</p>
-      <p><strong>技能</strong>：商店普通／稀有（金鑽）；強化耗技能卡（第 n 階＝第 n 個質數×100）；更高階靠升階或王塔／神王獨特技，升階耗同名卡。同類技能 CD＝2 回合，三技能輪替。戰鬥超過 20 完整回合敵方暴走。介面會顯示攻／盾／療係數與特效數字。</p>
+      <p><strong>技能</strong>：商店普通／稀有（金鑽）。<strong>升級</strong>耗法術精華（隨等級遞增，小幅加威力）；<strong>升階</strong>耗技能卡（第 n 階＝第 n 個質數×100，提升稀有度大斷點）。王塔／神王可掉獨特技。同類技能 CD＝2 回合，三技能輪替。戰鬥超過 20 完整回合敵方暴走。介面會顯示攻／盾／療係數與特效數字。</p>
       <p><strong>克制王階</strong>：專克王塔／神王（對王階傷害加成）。首通王階可自選 1 枚；其餘以破王徽＋技能卡（＋少量水晶）於商店兌換。破王徽來自王階通關／戰敗機率與討伐訓練。不進王塔／神王獨特掉落池。</p>
       <p><strong>後勤</strong>：每工位最多 ${workStationCap(1)} 人（主塔每 1000 層 +1，上限 6）；每 ${WORK_BATCH_SEC} 秒一批；主塔每 100 層 +4%（上限 80%）。含打造、訂單、派遣。</p>
-      <p><strong>養成消耗</strong>：進階神魂、增效同名卡（前期弱、後期漸強）、技能卡強化、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。</p>
+      <p><strong>養成消耗</strong>：進階神魂、增效同名卡（前期弱、後期漸強）、技能升級精華、技能升階技能卡（質數×100）、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。</p>
       <p><strong>派遣</strong>：席位有上限；獎勵隨主塔層遞增。非出戰、非打工角色可遠征。</p>
       <p><strong>訂單</strong>：需求與獎勵隨主塔層遞增，完成後短時間刷新。</p>
       <p><strong>遺物</strong>：依出戰角色轉生解鎖，裝在職業格上。</p>
@@ -2407,11 +2418,11 @@ function bind(root: HTMLElement) {
       if (act === 'deploy' && id) actions.deployCharacter(id)
       if (act === 'skillup' && id) {
         const err = actions.upgradeSkill(id)
-        if (err) toast(root, err)
+        toast(root, err ?? '技能升級成功')
       }
       if (act === 'skillasc' && id) {
-        const err = actions.ascendSkill(id, (el as HTMLElement).dataset.char)
-        toast(root, err ?? '技能升階成功')
+        const err = actions.ascendSkill(id)
+        toast(root, err ?? '技能升階成功（稀有度提升）')
       }
       if (act === 'buyskill' && skill) {
         const rarity = (el as HTMLElement).dataset.rarity as Rarity

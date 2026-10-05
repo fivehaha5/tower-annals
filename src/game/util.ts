@@ -279,16 +279,24 @@ export function nextBlueprintUnlockFloor(floor: number): number {
   return nextPrimeAfter(progress) * 100
 }
 
-/** 技能強化：技能卡；第 level 階（由 level → level+1）耗 nthPrime(level)×100 */
+/** 技能升級：法術精華（由 level → level+1，隨等級遞增） */
 export function skillUpgradeCost(level: number): number {
   const lv = Math.max(1, Math.floor(level))
-  return nthPrime(lv) * 100
+  return Math.floor(6 + lv * 4 + lv * lv * 0.18)
 }
 
-/** 技能升階：消耗同名角色卡（保留本體，多餘卡作材料） */
+/**
+ * 技能升階：技能卡。
+ * 由目前稀有度 → 下一階，耗 nthPrime(rank)×100；rank＝稀有度序（普通=1…）。
+ */
+export function skillAscendCost(rarity: Rarity): number {
+  const rank = Math.max(1, rarityIndex(rarity) + 1)
+  return nthPrime(rank) * 100
+}
+
+/** @deprecated 改用 skillAscendCost（技能卡）；保留別名避免外部殘留引用 */
 export function skillAscendCardCost(rarity: Rarity): number {
-  // 普通 1、稀有 2、史詩 3… 越高階越吃堆疊
-  return 1 + rarityIndex(rarity)
+  return skillAscendCost(rarity)
 }
 
 /** 裝備強化：熔鍛碎片 + 金鑽（隨等級遞增） */

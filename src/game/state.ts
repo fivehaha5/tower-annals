@@ -95,7 +95,7 @@ import {
   rarityIndex,
   ROLE_LABEL,
   shopSkillCost,
-  skillAscendCardCost,
+  skillAscendCost,
   skillUpgradeCost,
   uid,
 } from './util'
@@ -857,32 +857,22 @@ export function upgradeSkill(skillUid: string): string | null {
   const sk = getSkillItem(state, skillUid)
   if (!sk) return '找不到技能'
   const cost = skillUpgradeCost(sk.level)
-  if (state.resources.skillbook < cost) return '技能卡不足'
-  state.resources.skillbook -= cost
+  if (state.resources.essence < cost) return '法術精華不足'
+  state.resources.essence -= cost
   sk.level += 1
   emit()
   return null
 }
 
-export function ascendSkill(skillUid: string, providerCharUid?: string): string | null {
+/** 技能升階（稀有度）；耗技能卡。providerCharUid 僅相容舊 UI，不再消耗同名卡。 */
+export function ascendSkill(skillUid: string, _providerCharUid?: string): string | null {
   const sk = getSkillItem(state, skillUid)
   if (!sk) return '找不到技能'
   const next = nextRarity(sk.rarity)
   if (!next) return '技能已滿階'
-  let provider = providerCharUid ? getOwned(state, providerCharUid) : undefined
-  if (!provider) {
-    for (const role of ROLES) {
-      if (KINDS.some((k) => state.loadouts[role].skills[k] === skillUid)) {
-        provider = getRoleCharacter(state, role)
-        break
-      }
-    }
-  }
-  if (!provider) return '請先將技能裝到出戰格，再用該職出戰角色同名卡升階'
-  const cost = skillAscendCardCost(sk.rarity)
-  const stack = Math.max(1, provider.count ?? 1)
-  if (stack < cost + 1) return `需要 ${cost} 張多餘同名卡（目前堆疊 x${stack}）`
-  provider.count -= cost
+  const cost = skillAscendCost(sk.rarity)
+  if (state.resources.skillbook < cost) return '技能卡不足'
+  state.resources.skillbook -= cost
   sk.rarity = next
   emit()
   return null
