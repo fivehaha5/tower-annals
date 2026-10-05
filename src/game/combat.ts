@@ -394,6 +394,13 @@ function resolvePartyAction(
       mult *= 1 + darkAmp
     }
     dealt += stats.atk * skill.power * str * mult * (kind === 'attack' ? 1 : 0.55)
+    // 克制王階：對 isBoss（王塔／神王等）敵人額外倍率
+    const vsBoss = hasEffect(skill.id, 'vsBoss')
+    if (vsBoss > 0 && b.enemy.isBoss) {
+      const bossMult = 1 + vsBoss
+      dealt *= bossMult
+      trueDealt *= bossMult
+    }
     let h = stats.atk * skill.healPower * str
     if (relic?.heal) h *= 1 + relic.heal
     if (hasEffect(skill.id, 'balanceHeal') && b.teamHp < b.teamMaxHp * 0.5) {

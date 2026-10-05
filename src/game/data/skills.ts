@@ -2,17 +2,17 @@ import type { Role, SkillDef, SkillKind, Rarity } from '../types'
 
 export const SKILLS: SkillDef[] = [
   // 基礎
-  { id: 'w_atk', name: '裂空斬', role: 'warrior', kind: 'attack', element: '火', power: 1.25, shieldPower: 0, healPower: 0, desc: '戰士攻擊技' },
-  { id: 'w_def', name: '鐵壁', role: 'warrior', kind: 'defense', element: '雷', power: 0.25, shieldPower: 1.4, healPower: 0, desc: '戰士防禦技' },
-  { id: 'w_sup', name: '破軍號令', role: 'warrior', kind: 'support', element: '光', power: 0.55, shieldPower: 0.4, healPower: 0.25, desc: '戰士輔助技' },
+  { id: 'w_atk', name: '裂空斬', role: 'warrior', kind: 'attack', element: '火', power: 1.25, shieldPower: 0, healPower: 0, desc: '高倍率單體斬擊' },
+  { id: 'w_def', name: '鐵壁', role: 'warrior', kind: 'defense', element: '雷', power: 0.25, shieldPower: 1.4, healPower: 0, desc: '大幅抬盾並輕攻' },
+  { id: 'w_sup', name: '破軍號令', role: 'warrior', kind: 'support', element: '光', power: 0.55, shieldPower: 0.4, healPower: 0.25, desc: '攻盾療三向輔助' },
 
-  { id: 'm_atk', name: '熔晶爆', role: 'mage', kind: 'attack', element: '火', power: 1.45, shieldPower: 0, healPower: 0, desc: '法師攻擊技' },
-  { id: 'm_def', name: '霜核屏障', role: 'mage', kind: 'defense', element: '水', power: 0.2, shieldPower: 1.25, healPower: 0, desc: '法師防禦技' },
-  { id: 'm_sup', name: '異界雷弧', role: 'mage', kind: 'support', element: '雷', power: 0.7, shieldPower: 0.25, healPower: 0.2, desc: '法師輔助技' },
+  { id: 'm_atk', name: '熔晶爆', role: 'mage', kind: 'attack', element: '火', power: 1.45, shieldPower: 0, healPower: 0, desc: '高倍率火爆擊' },
+  { id: 'm_def', name: '霜核屏障', role: 'mage', kind: 'defense', element: '水', power: 0.2, shieldPower: 1.25, healPower: 0, desc: '水屬護盾屏障' },
+  { id: 'm_sup', name: '異界雷弧', role: 'mage', kind: 'support', element: '雷', power: 0.7, shieldPower: 0.25, healPower: 0.2, desc: '雷弧壓制並補盾療' },
 
-  { id: 'p_atk', name: '淨罪', role: 'priest', kind: 'attack', element: '光', power: 1.05, shieldPower: 0, healPower: 0.25, desc: '牧師攻擊技' },
-  { id: 'p_def', name: '光帷', role: 'priest', kind: 'defense', element: '光', power: 0.15, shieldPower: 1.6, healPower: 0.35, desc: '牧師防禦技' },
-  { id: 'p_sup', name: '聖律回響', role: 'priest', kind: 'support', element: '光', power: 0.25, shieldPower: 0.5, healPower: 1.35, desc: '牧師輔助技' },
+  { id: 'p_atk', name: '淨罪', role: 'priest', kind: 'attack', element: '光', power: 1.05, shieldPower: 0, healPower: 0.25, desc: '光擊並附帶治療' },
+  { id: 'p_def', name: '光帷', role: 'priest', kind: 'defense', element: '光', power: 0.15, shieldPower: 1.6, healPower: 0.35, desc: '高盾＋治療守勢' },
+  { id: 'p_sup', name: '聖律回響', role: 'priest', kind: 'support', element: '光', power: 0.25, shieldPower: 0.5, healPower: 1.35, desc: '強力群體治療' },
 
   // 王塔獨特（機制技）
   {
@@ -269,6 +269,95 @@ export const SKILLS: SkillDef[] = [
     source: 'godking',
     effects: [{ id: 'overhealToShield', value: 0.9 }, { id: 'shieldLeech', value: 0.15 }],
   },
+
+  /**
+   * 克制王階（antiKing）：對 isBoss 敵人額外傷害。
+   * 獲取方式未定——商店「克制王階」區僅佔位展示／試玩領取，勿當成正式掉落池。
+   */
+  {
+    id: 'ak_w_atk',
+    name: '斬王刃',
+    role: 'warrior',
+    kind: 'attack',
+    element: '火',
+    power: 1.55,
+    shieldPower: 0,
+    healPower: 0,
+    desc: '專破王階：對王／神王爆發斬擊',
+    unique: true,
+    source: 'antiKing',
+    effects: [{ id: 'vsBoss', value: 0.4 }, { id: 'pierceShield', value: 0.2 }],
+  },
+  {
+    id: 'ak_w_def',
+    name: '御王壁壘',
+    role: 'warrior',
+    kind: 'defense',
+    element: '光',
+    power: 0.3,
+    shieldPower: 1.75,
+    healPower: 0,
+    desc: '抗王守勢：厚盾並克制王階壓迫',
+    unique: true,
+    source: 'antiKing',
+    effects: [{ id: 'vsBoss', value: 0.15 }, { id: 'chargeShield', value: 2 }],
+  },
+  {
+    id: 'ak_m_atk',
+    name: '蝕王咒',
+    role: 'mage',
+    kind: 'attack',
+    element: '暗',
+    power: 1.65,
+    shieldPower: 0,
+    healPower: 0,
+    desc: '蝕王無屬：對王階高額真實傷害',
+    unique: true,
+    source: 'antiKing',
+    effects: [{ id: 'vsBoss', value: 0.45 }, { id: 'trueDamage', value: 0.3 }],
+  },
+  {
+    id: 'ak_m_sup',
+    name: '破律雷印',
+    role: 'mage',
+    kind: 'support',
+    element: '雷',
+    power: 0.85,
+    shieldPower: 0.35,
+    healPower: 0.15,
+    desc: '破律印記：輔助壓制王階護盾',
+    unique: true,
+    source: 'antiKing',
+    effects: [{ id: 'vsBoss', value: 0.3 }, { id: 'pierceShield', value: 0.35 }],
+  },
+  {
+    id: 'ak_p_atk',
+    name: '聖裁王罪',
+    role: 'priest',
+    kind: 'attack',
+    element: '光',
+    power: 1.2,
+    shieldPower: 0.1,
+    healPower: 0.35,
+    desc: '聖裁：光擊克制王階並回血',
+    unique: true,
+    source: 'antiKing',
+    effects: [{ id: 'vsBoss', value: 0.35 }, { id: 'antiHealCut', value: 1 }],
+  },
+  {
+    id: 'ak_p_sup',
+    name: '鎮王聖詠',
+    role: 'priest',
+    kind: 'support',
+    element: '光',
+    power: 0.35,
+    shieldPower: 0.8,
+    healPower: 1.5,
+    desc: '鎮王詠唱：強療並對王階施壓',
+    unique: true,
+    source: 'antiKing',
+    effects: [{ id: 'vsBoss', value: 0.25 }, { id: 'overhealToShield', value: 0.5 }],
+  },
 ]
 
 export const SKILL_MAP = Object.fromEntries(SKILLS.map((s) => [s.id, s])) as Record<string, SkillDef>
@@ -281,6 +370,11 @@ export function defaultSkills(role: Role): Record<SkillKind, string> {
 
 export function uniqueSkillsBySource(source: 'boss' | 'godking'): SkillDef[] {
   return SKILLS.filter((s) => s.unique && s.source === source)
+}
+
+/** 克制王階技能池（非王塔／神王掉落；獲取佔位） */
+export function antiKingSkills(): SkillDef[] {
+  return SKILLS.filter((s) => s.source === 'antiKing')
 }
 
 export const SHOP_SKILL_RARITIES: Rarity[] = ['普通', '稀有']
@@ -297,5 +391,6 @@ export function shopSkillCatalog(): { def: SkillDef; rarity: Rarity }[] {
 export function dropSkillRarity(def: SkillDef): Rarity {
   if (def.source === 'godking') return '永恆'
   if (def.source === 'boss') return '神話'
+  if (def.source === 'antiKing') return '史詩'
   return '史詩'
 }

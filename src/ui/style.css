@@ -339,6 +339,35 @@ body {
   position: relative;
 }
 
+.skill.skill-with-fx {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 2px;
+  min-height: auto;
+  text-align: left;
+  padding: 6px 8px;
+}
+
+.skill .skill-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.skill .skill-fx {
+  font-size: 9px;
+  color: var(--muted, #8b93a7);
+  line-height: 1.3;
+}
+
+.card.locked-soft {
+  opacity: 0.72;
+}
+
 .skill .cd-badge {
   font-size: 9px;
   color: #ffb454;

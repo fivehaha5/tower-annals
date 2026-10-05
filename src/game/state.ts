@@ -7,7 +7,13 @@ import {
   parseEquipDefId,
 } from './data/equipment'
 import { RELIC_MAP, migrateLegacyRelicId, relicsUnlockedByRebirth } from './data/relics'
-import { SKILL_MAP, defaultSkills, dropSkillRarity, shopSkillCatalog } from './data/skills'
+import {
+  SKILL_MAP,
+  antiKingSkills,
+  defaultSkills,
+  dropSkillRarity,
+  shopSkillCatalog,
+} from './data/skills'
 import {
   battleTick,
   calcCharStats,
@@ -1092,6 +1098,28 @@ export function shopBuySkill(skillId: string, rarity: Rarity): string | null {
   if (state.resources.gold < cost) return '金鑽不足'
   state.resources.gold -= cost
   pushSkillItem(skillId, rarity, 1)
+  emit()
+  return null
+}
+
+/**
+ * 克制王階技能：獲取方式未定。
+ * 臨時試玩領取——僅補齊尚未持有的 antiKing 技能（史詩），正式獲取路徑日後替換。
+ */
+export function claimAntiKingSkillsPreview(): string | null {
+  const pool = antiKingSkills()
+  let granted = 0
+  for (const def of pool) {
+    if (state.skillItems.some((s) => s.skillId === def.id)) continue
+    pushSkillItem(def.id, dropSkillRarity(def), 1)
+    granted++
+  }
+  if (granted === 0) {
+    state.pendingToast = '已持有全部克制王階技能（獲取方式仍未定）'
+    emit()
+    return '已持有全部克制王階技能'
+  }
+  state.pendingToast = `試玩領取：獲得 ${granted} 個克制王階技能（獲取方式未定／敬請期待）`
   emit()
   return null
 }

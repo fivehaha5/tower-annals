@@ -1,11 +1,19 @@
 import { BOSS_CHARACTERS, CHARACTERS, CHAR_MAP, GODKING_CHARACTERS } from '../game/data/characters'
-import { SKILL_MAP, shopSkillCatalog, uniqueSkillsBySource } from '../game/data/skills'
+import { SKILL_MAP, antiKingSkills, shopSkillCatalog, uniqueSkillsBySource } from '../game/data/skills'
 import { currentCycleDropInfo } from '../game/drops'
 import {
   EQUIP_SLOTS,
   EQUIP_SLOT_LABEL,
+  makeEquipDef,
   parseEquipDefId,
 } from '../game/data/equipment'
+import {
+  equipStatLine,
+  ownedEquipStatLine,
+  skillEffectLine,
+  skillPowerLine,
+  skillSpecialLine,
+} from '../game/formatText'
 import {
   calcCharStats,
   createBattle,
@@ -469,7 +477,7 @@ function dropPanel(state: GameState, mode: 'boss' | 'godking'): string {
       ds.aim === 'skill'
         ? `<select class="input" style="min-height:auto;margin-top:8px" data-act="droptarget" data-mode="${mode}" data-kind="skill">
             <option value="">隨機該池</option>
-            ${skills.map((s) => `<option value="${s.id}" ${ds.targetId === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+            ${skills.map((s) => `<option value="${s.id}" ${ds.targetId === s.id ? 'selected' : ''}>${s.name}（${skillPowerLine(s)}）</option>`).join('')}
           </select>`
         : ''
     }`
@@ -538,7 +546,10 @@ function towerView(state: GameState): string {
                 const sd = s ? SKILL_MAP[s.skillId] : undefined
                 const cd = b?.skillCds?.[role]?.[kind] ?? 0
                 const onCd = cd > 0
-                return `<div class="skill${onCd ? ' on-cd' : ''}" data-skill-cd data-role="${role}" data-kind="${kind}" style="border-color:${RARITY_COLOR[s?.rarity ?? '普通']}">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '—'}${s ? ` Lv.${s.level}` : ''}<span class="cd-badge" data-cd-badge>${onCd ? `CD${cd}` : ''}</span></div>`
+                const tip = sd ? skillEffectLine(sd) : ''
+                const fx = sd ? skillPowerLine(sd) : ''
+                const special = sd ? skillSpecialLine(sd) : ''
+                return `<div class="skill skill-with-fx${onCd ? ' on-cd' : ''}" data-skill-cd data-role="${role}" data-kind="${kind}" style="border-color:${RARITY_COLOR[s?.rarity ?? '普通']}" title="${escapeHtml(tip)}"><div class="skill-name">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '—'}${s ? ` Lv.${s.level}` : ''}<span class="cd-badge" data-cd-badge>${onCd ? `CD${cd}` : ''}</span></div>${fx ? `<div class="skill-fx">${escapeHtml(fx)}${special ? ` · ${escapeHtml(special)}` : ''}</div>` : ''}</div>`
               }).join('')}</div>
             </div>`
           })
@@ -682,7 +693,7 @@ function charCard(state: GameState, ch: OwnedCharacter, opts?: { showDeploy?: bo
     <img src="${def.portrait}" alt="${def.name}" />
     <div class="body">
       <div class="title">${nameSpan(def.name, ch.rarity)} · ${raritySpan(ch.rarity)} · Lv.${ch.level}/${CHAR_LEVEL_MAX}</div>
-      <div class="sub">${ROLE_LABEL[def.role]} · ${def.element} · 進階${ch.ascend} · 轉生${rebirth}（裝T${maxTier}）· 攻${formatNum(stats.atk)}</div>
+      <div class="sub">${ROLE_LABEL[def.role]} · ${def.element} · 進階${ch.ascend} · 轉生${rebirth}（裝T${maxTier}）· 攻${formatNum(stats.atk)} 血${formatNum(stats.hp)} 防${formatNum(stats.def)} 盾${formatNum(stats.shield)}</div>
       <div class="sub">增效${ch.boost}（打工${workBoostMult(ch).toFixed(2)}x）· ${deployed ? '出戰' : ch.workJob ? WORK_LABEL[ch.workJob] : '閒置'}</div>
       ${levelButtons(ch)}
       <div class="btn-row" style="margin-top:8px">
@@ -715,8 +726,10 @@ function roleSkillBlock(state: GameState, role: Role): string {
     const canAsc = !!nextRarity(s.rarity)
     const cardCost = skillAscendCardCost(s.rarity)
     const canPayCards = stack >= cardCost + 1
+    const tip = sd ? skillEffectLine(sd) : ''
     return `<div style="margin-top:8px">
-      <div class="muted">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '?'} ${raritySpan(s.rarity)} Lv.${s.level}</div>
+      <div class="muted">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '?'} ${raritySpan(s.rarity)} Lv.${s.level}${sd?.source === 'antiKing' ? ' · 克制王階' : ''}</div>
+      ${sd ? `<div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(sd))}${skillSpecialLine(sd) ? ` · ${escapeHtml(skillSpecialLine(sd))}` : ''}</div><div class="muted" style="font-size:11px">${escapeHtml(sd.desc)}</div>` : ''}
       <div class="btn-row" style="margin-top:4px">
         <button class="btn" data-act="skillup" data-id="${s.uid}">強化(${formatNum(upCost)}技能卡)</button>
         ${
@@ -734,8 +747,11 @@ function roleSkillBlock(state: GameState, role: Role): string {
     bag
       .map((sk) => {
         const sd = SKILL_MAP[sk.skillId]!
+        const tip = skillEffectLine(sd)
         return `<div class="row-item">
-          <div class="row-main">${sd.unique ? '★' : ''}${sd.name} · ${raritySpan(sk.rarity)} Lv.${sk.level}</div>
+          <div class="row-main">${sd.unique ? '★' : ''}${sd.name} · ${raritySpan(sk.rarity)} Lv.${sk.level}${sd.source === 'antiKing' ? ' · 克制王階' : ''}</div>
+          <div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(sd))}${skillSpecialLine(sd) ? ` · ${escapeHtml(skillSpecialLine(sd))}` : ''}</div>
+          <div class="muted" style="font-size:11px">${escapeHtml(sd.desc)}</div>
           <div class="btn-row">
             <button class="btn primary" data-act="skillequip-role" data-role="${role}" data-skill="${sk.uid}">裝上</button>
             <button class="btn" data-act="skillup" data-id="${sk.uid}">+Lv</button>
@@ -774,7 +790,8 @@ function roleEquipBlock(state: GameState, role: Role): string {
       if (!uidEq) return `${EQUIP_SLOT_LABEL[slot]}—`
       const eq = state.equips.find((e) => e.uid === uidEq)
       const p = eq ? parseEquipDefId(eq.defId) : null
-      return p ? `${EQUIP_SLOT_LABEL[slot]}T${p.tier}` : EQUIP_SLOT_LABEL[slot]
+      if (!eq || !p) return EQUIP_SLOT_LABEL[slot]
+      return `${EQUIP_SLOT_LABEL[slot]}T${p.tier}(${ownedEquipStatLine(eq)})`
     }).join(' · ')}</div>
     <div class="section-head">
       <div class="muted">背包 ${list.length}</div>
@@ -793,6 +810,7 @@ function roleEquipBlock(state: GameState, role: Role): string {
             const needRebirth = rebirthRequiredForEquipTier(p.tier)
             return `<div class="row-item">
               <div class="row-main">${EQUIP_SLOT_LABEL[p.slot]} T${p.tier} · ${raritySpan(eq.rarity)} +${eq.level}${worn ? ' · 穿' : ''}</div>
+              <div class="sub">${ownedEquipStatLine(eq)}</div>
               <div class="btn-row">
                 <button class="btn" data-act="equp" data-id="${eq.uid}">+Lv</button>
                 <button class="btn" data-act="wear-role" data-role="${role}" data-id="${eq.uid}" ${wearLocked ? 'disabled' : ''}>${wearLocked ? `轉${needRebirth}` : '裝'}</button>
@@ -826,7 +844,7 @@ function roleRelicBlock(state: GameState, role: Role): string {
       ${options
         .map((r) => {
           const locked = rebirth < r.needRebirth && !inv.has(r.id)
-          return `<button class="btn ${cur === r.id ? 'primary' : ''}" data-act="relic" data-role="${role}" data-relic="${r.id}" ${locked ? 'disabled' : ''} title="${escapeHtml(r.desc)}">${r.name}</button>`
+          return `<button class="btn ${cur === r.id ? 'primary' : ''}" data-act="relic" data-role="${role}" data-relic="${r.id}" ${locked ? 'disabled' : ''} title="${escapeHtml(r.desc)}">${r.name}${locked ? `（需轉${r.needRebirth}）` : ''}</button>`
         })
         .join('')}
     </div>
@@ -1106,7 +1124,7 @@ function shopHubView(state: GameState): string {
           <div class="station-title">基礎技能</div>
           <div class="station-count">${shopSkillCatalog().length}</div>
         </div>
-        <div class="station-desc">各職攻／防／輔 · 僅普通與稀有 · 更強技能需王塔</div>
+        <div class="station-desc">各職攻／防／輔 · 顯示係數／特效 · 含克制王階預覽</div>
       </button>
     </div>
   `
@@ -1226,6 +1244,13 @@ function shopEquipView(state: GameState): string {
       <div class="muted">品質於<strong>後勤 → 裝備打造</strong>以藍圖＋熔鍛＋金鑽鍛造，依機率出品質（非事後升品）。強化只加等級。</div>
       <div class="muted" style="margin-top:6px">目前可打造 T${tier} · 下一階需主塔 ${formatNum(nextUnlockFloor)} 層</div>
       <div class="muted" style="margin-top:4px">T${tier} 單件約：${formatNum(bp)} 藍圖＋${formatNum(craft.forge)} 熔鍛＋${formatNum(craft.gold)} 金鑽</div>
+      <div class="muted" style="margin-top:8px">T${tier} 基礎屬性（普通 Lv.0，品質／強化會再乘算）：</div>
+      <div class="list tight-list" style="margin-top:4px">
+        ${EQUIP_SLOTS.map((slot) => {
+          const sample = makeEquipDef('warrior', slot, tier)
+          return `<div class="row-item"><div class="row-main">${EQUIP_SLOT_LABEL[slot]} · ${equipStatLine(sample.bonus)}</div></div>`
+        }).join('')}
+      </div>
       <button class="btn primary" data-act="goto-craft" style="width:100%;margin-top:10px">前往後勤打造</button>
     </div>
   `
@@ -1253,10 +1278,10 @@ function logisticsCraftSection(state: GameState): string {
           (role) => `<div class="card"><div class="body">
             <div class="title">${ROLE_LABEL[role]} · T${tier}</div>
             <div class="btn-row" style="margin-top:6px;flex-wrap:wrap">
-              ${EQUIP_SLOTS.map(
-                (slot) =>
-                  `<button class="btn" data-act="crafteq" data-role="${role}" data-slot="${slot}" data-tier="${tier}">${EQUIP_SLOT_LABEL[slot]}</button>`,
-              ).join('')}
+              ${EQUIP_SLOTS.map((slot) => {
+                const sample = makeEquipDef(role, slot, tier)
+                return `<button class="btn" data-act="crafteq" data-role="${role}" data-slot="${slot}" data-tier="${tier}" title="${escapeHtml(equipStatLine(sample.bonus))}">${EQUIP_SLOT_LABEL[slot]}<br/><span class="muted" style="font-size:10px">${equipStatLine(sample.bonus)}</span></button>`
+              }).join('')}
             </div>
           </div></div>`,
         )
@@ -1271,6 +1296,11 @@ function shopSkillsView(state: GameState): string {
   const filter = shopSkillFilter()
   const catalog = shopSkillCatalog().filter((x) => filter === 'all' || x.def.role === filter)
   const countOf = (role: Role) => shopSkillCatalog().filter((x) => x.def.role === role).length
+  const antiPool = antiKingSkills().filter((d) => filter === 'all' || d.role === filter)
+  const ownedAnti = new Set(
+    state.skillItems.filter((s) => SKILL_MAP[s.skillId]?.source === 'antiKing').map((s) => s.skillId),
+  )
+  const missingAnti = antiKingSkills().filter((d) => !ownedAnti.has(d.id)).length
   return `
     <div class="panel">
       ${shopBackBtn()}
@@ -1283,13 +1313,36 @@ function shopSkillsView(state: GameState): string {
         <button class="btn ${filter === 'priest' ? 'primary' : ''}" data-act="shopskillfilter" data-filter="priest">牧師 ${countOf('priest')}</button>
       </div>
     </div>
+    <div class="panel">
+      <div class="section-title">克制王階</div>
+      <div class="muted">專克王塔／神王（對王階傷害加成）。正式獲取方式未定／敬請期待；下列為內容預覽。</div>
+      <button class="btn ${missingAnti ? 'primary' : ''}" data-act="claim-antiking" style="width:100%;margin-top:8px" ${missingAnti ? '' : 'disabled'}>
+        ${missingAnti ? `試玩領取（獲取未定）· 可領 ${missingAnti} 個` : '已持有全部（獲取方式仍未定）'}
+      </button>
+      <div class="list" style="margin-top:8px">
+        ${antiPool
+          .map((def) => {
+            const owned = ownedAnti.has(def.id)
+            const tip = skillEffectLine(def)
+            return `<div class="card ${owned ? '' : 'locked-soft'}"><div class="body">
+              <div class="title">${ROLE_LABEL[def.role]} · ${SKILL_KIND_LABEL[def.kind]} · ★${def.name}${owned ? '' : ' · 未持有'}</div>
+              <div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(def))}${skillSpecialLine(def) ? ` · ${escapeHtml(skillSpecialLine(def))}` : ''}</div>
+              <div class="muted">${escapeHtml(def.desc)}</div>
+              <div class="muted" style="margin-top:4px">${owned ? '已在技能庫' : '獲取方式未定／敬請期待'}</div>
+            </div></div>`
+          })
+          .join('')}
+      </div>
+    </div>
     <div class="list">
       ${catalog
         .map(({ def, rarity }) => {
           const cost = shopSkillCost(rarity)
+          const tip = skillEffectLine(def)
           return `<div class="card"><div class="body">
             <div class="title">${ROLE_LABEL[def.role]} · ${SKILL_KIND_LABEL[def.kind]} · ${def.name}</div>
-            <div class="sub">${raritySpan(rarity)} · ${def.element} · ${def.desc}</div>
+            <div class="sub" title="${escapeHtml(tip)}">${raritySpan(rarity)} · ${escapeHtml(skillPowerLine(def))}</div>
+            <div class="muted">${escapeHtml(def.desc)}</div>
             <div class="btn-row" style="margin-top:6px">
               <button class="btn primary" data-act="buyskill" data-skill="${def.id}" data-rarity="${rarity}">購買(${formatNum(cost)}金鑽)</button>
             </div>
@@ -1595,7 +1648,8 @@ function gameGuideModal(): string {
       <p><strong>爬塔</strong>：主塔／副塔／技能本可沖層或原地刷（副塔／技能本每 5 層小首領）；技能本主產技能卡（主塔 ${SKILL_DUNGEON_UNLOCK} 解鎖）。戰敗會扣水晶／金鑽。王塔／神王可空刷（低機率）或定向（水晶＋技能卡隨輪迴遞增）；資源不足會改回空刷。</p>
       <p><strong>職業編隊</strong>：戰士、法師、牧師各有獨立 loadout——出戰角色、七部位裝備、三技能格、遺物。換角色不改裝備配置。</p>
       <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），高品機率偏低；強化只加等級，不能事後升品。</p>
-      <p><strong>技能</strong>：商店普通／稀有（金鑽）；強化耗技能卡（第 n 階＝第 n 個質數×100）；更高階靠升階或王塔／神王獨特技，升階耗同名卡。同類技能 CD＝2 回合，三技能輪替。戰鬥超過 20 完整回合敵方暴走。</p>
+      <p><strong>技能</strong>：商店普通／稀有（金鑽）；強化耗技能卡（第 n 階＝第 n 個質數×100）；更高階靠升階或王塔／神王獨特技，升階耗同名卡。同類技能 CD＝2 回合，三技能輪替。戰鬥超過 20 完整回合敵方暴走。介面會顯示攻／盾／療係數與特效數字。</p>
+      <p><strong>克制王階</strong>：另有一組專克王塔／神王之技能（對王階傷害加成）。正式獲取方式未定；商店可預覽，並有「試玩領取」佔位。</p>
       <p><strong>後勤</strong>：每工位最多 ${workStationCap(1)} 人（主塔每 1000 層 +1，上限 6）；每 ${WORK_BATCH_SEC} 秒一批；主塔每 100 層 +4%（上限 80%）。含打造、訂單、派遣。</p>
       <p><strong>養成消耗</strong>：進階神魂、增效同名卡（前期弱、後期漸強）、技能卡強化、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。</p>
       <p><strong>派遣</strong>：席位有上限；獎勵隨主塔層遞增。非出戰、非打工角色可遠征。</p>
@@ -2313,6 +2367,10 @@ function bind(root: HTMLElement) {
         const rarity = (el as HTMLElement).dataset.rarity as Rarity
         const err = actions.shopBuySkill(skill, rarity)
         toast(root, err ?? '已購入技能')
+      }
+      if (act === 'claim-antiking') {
+        const err = actions.claimAntiKingSkillsPreview()
+        toast(root, err ?? '已試玩領取克制王階技能')
       }
       if (act === 'dropaim') {
         const mode = (el as HTMLElement).dataset.mode as 'boss' | 'godking'

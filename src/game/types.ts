@@ -65,6 +65,8 @@ export type SkillEffectId =
   | 'mirrorCast'
   | 'balanceHeal'
   | 'poisonTick'
+  /** 對王階（isBoss）敵人傷害加成，value 為倍率增量如 0.35＝+35% */
+  | 'vsBoss'
 
 export type BossMechanicId =
   | 'fogLayer'
@@ -103,7 +105,11 @@ export interface SkillDef {
   healPower: number
   desc: string
   unique?: boolean
-  source?: 'boss' | 'godking'
+  /**
+   * boss／godking＝王塔／神王掉落獨特技；
+   * antiKing＝克制王階技（獲取方式未定，見商店佔位領取）
+   */
+  source?: 'boss' | 'godking' | 'antiKing'
   effects?: SkillEffect[]
 }
 
