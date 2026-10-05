@@ -875,7 +875,7 @@ function roleRelicBlock(state: GameState, role: Role): string {
     (r) =>
       r.role === role &&
       (inv.has(r.id) || unlocked.some((u) => u.id === r.id) || cur === r.id),
-  )
+  ).sort((a, b) => b.needRebirth - a.needRebirth)
   return `<div class="panel">
     <div class="section-title">${ROLE_LABEL[role]} · 遺物</div>
     <div class="muted">職業特化遺物：僅本職可裝；依出戰角色轉生解鎖</div>
@@ -1285,7 +1285,13 @@ function shopGachaView(state: GameState): string {
 }
 
 function shopResourceView(state: GameState): string {
-  const shopItems = (Object.keys(SHOP_RATES) as (keyof Resources)[]).filter((k) => k !== 'gold')
+  const shopItems = (Object.keys(SHOP_RATES) as (keyof Resources)[])
+    .filter((k) => k !== 'gold')
+    .sort((a, b) => {
+      const ra = RESOURCE_META.find((m) => m.key === a)?.rarity ?? '普通'
+      const rb = RESOURCE_META.find((m) => m.key === b)?.rarity ?? '普通'
+      return compareRarityDesc(ra, rb)
+    })
   return `
     <div class="panel">
       ${shopBackBtn()}
