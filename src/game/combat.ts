@@ -47,6 +47,7 @@ import {
   ENEMY_DEF_ANCHOR_BONUS,
   ENEMY_DEF_ANCHOR_POWER,
   EQUIP_LEVEL_SCALE,
+  FRONTIER_PUSH_MULT,
   SINGLE_SKILL_FOCUS,
   SKILL_CP_WEIGHT,
   SKILL_KIND_COOLDOWN_TURNS,
@@ -235,7 +236,22 @@ export function farmFloorOf(state: GameState): number {
 
 export function createBattle(state: GameState): BattleSnapshot {
   const floor = farmFloorOf(state)
-  const enemy = buildEnemy(state.idleMode, floor)
+  const mode = state.idleMode
+  const enemy = buildEnemy(mode, floor)
+  // 沖在解鎖最高層：額外加壓；降層掛機不套用
+  const unlocked = Math.max(1, state.floors[mode] ?? 1)
+  const atFrontier =
+    floor >= unlocked &&
+    (mode === 'main' || mode === 'blueprint' || mode === 'skill' || mode === 'hunt')
+  if (atFrontier && FRONTIER_PUSH_MULT > 1) {
+    const m = FRONTIER_PUSH_MULT
+    enemy.hp = Math.max(1, Math.floor(enemy.hp * m))
+    enemy.maxHp = enemy.hp
+    enemy.shield = Math.floor(enemy.shield * m)
+    enemy.maxShield = enemy.shield
+    enemy.atk = Math.max(1, Math.floor(enemy.atk * m))
+    enemy.power = Math.max(1, Math.floor(enemy.power * m))
+  }
   const totals = teamTotals(state)
   return {
     teamHp: totals.hp,
@@ -243,7 +259,7 @@ export function createBattle(state: GameState): BattleSnapshot {
     teamShield: totals.shield,
     teamMaxShield: totals.shield,
     enemy,
-    log: '掛機戰鬥中…',
+    log: atFrontier ? '掛機戰鬥中…（前沿加壓）' : '掛機戰鬥中…',
     winning: teamPower(state) >= enemy.power * 0.85,
     chargeShield: 0,
     actIndex: 0,

@@ -96,7 +96,7 @@ import {
 import { RELIC_MAP, RELICS, relicsUnlockedByRebirth } from '../game/data/relics'
 import { countRebirthBonusCells, roleRebirthBonus } from '../game/mechanics'
 import { APP_VERSION, checkAppUpdate, warmImageCache } from '../appUpdate'
-import { ANTI_KING_EXCHANGE_COST, SKILL_DUNGEON_COOLDOWN_SEC, SKILL_DUNGEON_UNLOCK } from '../game/balance'
+import { ANTI_KING_EXCHANGE_COST, FRONTIER_PUSH_MULT, SKILL_DUNGEON_COOLDOWN_SEC, SKILL_DUNGEON_UNLOCK } from '../game/balance'
 
 const MODE_LABEL: Record<IdleMode, string> = {
   main: '主塔',
@@ -422,11 +422,16 @@ function floorSelectPanel(state: GameState): string {
     mode === 'skill' && (state.skillDungeonCdLeft ?? 0) > 0
       ? ` · 冷卻 ${state.skillDungeonCdLeft}s`
       : ''
+  const atTip = farm >= max
+  const tipHint = atTip ? ' · 前沿加壓' : ' · 降層較穩'
+  const shownPower = Math.floor(
+    buildEnemy(mode, farm).power * (atTip && (mode === 'main' || mode === 'blueprint' || mode === 'skill' || mode === 'hunt') ? FRONTIER_PUSH_MULT : 1),
+  )
   return `<div class="panel compact-panel">
     <div class="section-head">
       <div>
         <div class="section-title">掛機 · ${formatNum(farm)}F · ${push === 'push' ? '沖層' : '原地'}</div>
-        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(buildEnemy(mode, farm).power)}${huntHint}${skillCd}${berserking ? ' · 暴走中' : ''}</div>
+        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(shownPower)}${huntHint}${skillCd}${tipHint}${berserking ? ' · 暴走中' : ''}</div>
       </div>
       ${foldBtn('__foldFarm', '收起設定', '展開設定')}
     </div>
@@ -1682,7 +1687,7 @@ function gameGuideModal(): string {
   return `<div class="modal guide-modal" data-act="guide-close"><div class="sheet" data-stop="1">
     <h3>遊戲引導</h3>
     <div class="muted" style="text-align:left;line-height:1.55;max-height:55vh;overflow-y:auto">
-      <p><strong>爬塔</strong>：主塔／副塔／技能本／討伐訓練可沖層或原地刷（副塔／技能本／討伐每 5 層小首領）；技能本每層難度大幅上升，通關掉數本<strong>同名技能本</strong>（隨機分給已持有技能）並冷卻 ${SKILL_DUNGEON_COOLDOWN_SEC} 秒（主塔 ${SKILL_DUNGEON_UNLOCK} 解鎖）；討伐訓練主產破王徽（首通王階後解鎖）。戰敗會扣水晶／金鑽。王塔／神王可空刷（低機率）或定向（水晶＋技能卡隨輪迴遞增）；資源不足會改回空刷。</p>
+      <p><strong>爬塔</strong>：主塔／副塔／技能本／討伐訓練可沖層或原地刷。掛在<strong>已解鎖最高層</strong>會套「前沿加壓」（敵更肉／更痛）；<strong>降層掛機</strong>較穩、適合養成。技能本通關產同名技能本（優先出戰技）並冷卻 ${SKILL_DUNGEON_COOLDOWN_SEC} 秒（主塔 ${SKILL_DUNGEON_UNLOCK} 解鎖）；討伐訓練主產破王徽。戰敗扣資源（水晶見底時免罰）。王塔／神王可空刷或定向。</p>
       <p><strong>職業編隊</strong>：戰士、法師、牧師各有獨立 loadout——出戰角色、七部位裝備、三技能格、遺物。換角色不改裝備配置。</p>
       <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），高品機率偏低；強化只加等級，不能事後升品。</p>
       <p><strong>技能</strong>：商店普通／稀有（金鑽）。<strong>升級</strong>耗法術精華（隨等級遞增，小幅加威力）；<strong>升階</strong>耗<strong>同名技能本</strong>（第 n 階＝第 n 個質數×3；技能本優先掉給出戰技）。王塔／神王可掉獨特技。同類技能 CD＝2 回合，三技能輪替。戰鬥超過 28 完整回合敵方暴走。介面會顯示攻／盾／療係數與特效數字。</p>

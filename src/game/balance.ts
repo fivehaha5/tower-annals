@@ -38,17 +38,16 @@
 export const CHAR_LEVEL_MAX = 100
 
 /**
- * 主塔敵方戰力：前期偏平可推，中後期隨轉生／裝備階拉升。
- * （舊 58·f^1.33 讓新號約 20F 就大量戰敗＋暴走。）
+ * 主塔敵方戰力：前期可推，中後期變陡——防「一路輕鬆沖層」。
+ * 降層掛機仍打較低 seed，不受前沿加成（見 FRONTIER_PUSH_MULT）。
  */
 export function mainEnemyPower(floor: number): number {
   const f = Math.max(1, floor)
-  // 前期平；50–90 緩和成長（最佳規劃在此硬停）；百層後再拉
-  let p = 32 * Math.pow(f, 1.14) * (1 + f / 2800)
-  if (f >= 40) p *= 1 + (f - 40) * 0.0028
-  if (f >= 90) p *= 1 + (f - 90) * 0.0045
-  if (f >= 180) p *= 1 + (f - 180) * 0.0065
-  if (f % 10 === 0) p *= 1.08
+  let p = 38 * Math.pow(f, 1.2) * (1 + f / 2000)
+  if (f >= 30) p *= 1 + (f - 30) * 0.0038
+  if (f >= 80) p *= 1 + (f - 80) * 0.0055
+  if (f >= 160) p *= 1 + (f - 160) * 0.007
+  if (f % 10 === 0) p *= 1.12
   return Math.floor(p)
 }
 
@@ -120,51 +119,59 @@ export const UNIQUE_SKILL_BONUS = 1.18
  */
 export const SKILL_KIND_COOLDOWN_TURNS = 2
 
-/** 單技能出手補償（舊版同 tick 可疊三招，改為一招後略抬倍率） */
-export const SINGLE_SKILL_FOCUS = 1.28
+/** 單技能出手補償 */
+export const SINGLE_SKILL_FOCUS = 1.14
 
 /** 技能皆在冷卻／未裝備時的普攻威力係數 */
-export const BASIC_ATTACK_POWER = 0.8
+export const BASIC_ATTACK_POWER = 0.72
 
 /**
  * 完整回合＝全員左→右各出手一次＋敵方一擊。
  * 超過此回合數觸發暴走，阻止弱勢無限磨死。
  */
-export const BERSERK_AFTER_ROUNDS = 28
+export const BERSERK_AFTER_ROUNDS = 22
 
 /** 暴走起始傷害倍率 */
-export const BERSERK_DMG_MULT = 1.95
+export const BERSERK_DMG_MULT = 2.25
 
 /** 暴走每多一回合再疊加的傷害倍率 */
-export const BERSERK_DMG_GROW = 0.24
+export const BERSERK_DMG_GROW = 0.3
 
 /** 暴走每回合額外燒血（占最大生命比例，隨超回合遞增） */
-export const BERSERK_BURN_BASE = 0.018
-export const BERSERK_BURN_GROW = 0.007
+export const BERSERK_BURN_BASE = 0.022
+export const BERSERK_BURN_GROW = 0.009
 
-/** 敵方攻擊相對難度種子係數（略收，讓同戰力可在暴走前清層） */
-export const ENEMY_ATK_FROM_POWER = 0.048
+/** 敵方攻擊相對難度種子係數 */
+export const ENEMY_ATK_FROM_POWER = 0.066
 
 /**
  * 敵方生命相對難度種子。
- * 高種子再乘 soft scale，避免「戰力數字很高但血量不夠技能爆發」。
  */
-export const ENEMY_HP_FROM_POWER = 0.72
+export const ENEMY_HP_FROM_POWER = 0.88
 
 /** 敵方護盾相對難度種子（普通／小首領／Boss 再乘倍率） */
-export const ENEMY_SHIELD_FROM_POWER = 0.16
+export const ENEMY_SHIELD_FROM_POWER = 0.22
 
 /**
- * 敵方減傷錨點：無硬頂；錨點略上移，前期減傷更溫和。
+ * 敵方減傷錨點：無硬頂。
  */
-export const ENEMY_DEF_ANCHOR_POWER = 280_000
-export const ENEMY_DEF_ANCHOR_BONUS = 12
+export const ENEMY_DEF_ANCHOR_POWER = 220_000
+export const ENEMY_DEF_ANCHOR_BONUS = 13
 
-/** 隊伍戰力低於敵方時的額外減傷指數（略鬆，允許小幅落後仍可磨） */
-export const CP_UNDERDOG_MITIGATION_EXP = 0.82
+/**
+ * 隊伍戰力低於敵方時的額外減傷指數。
+ * 略收緊：落後時沖層更痛，鼓勵降層掛機養成。
+ */
+export const CP_UNDERDOG_MITIGATION_EXP = 1.0
 
-/** 技能對戰力貢獻係數（技能不進角色面板，但決定實際爆發） */
+/** 技能對戰力貢獻係數 */
 export const SKILL_CP_WEIGHT = 0.85
+
+/**
+ * 掛在「已解鎖最高層」沖層時的敵方強化（血／盾／攻）。
+ * 降層原地掛機不套用 → 養成仍穩，推關不能躺贏。
+ */
+export const FRONTIER_PUSH_MULT = 1.28
 
 /** 技能本解鎖所需主塔層數（略提前，銜接首日養成） */
 export const SKILL_DUNGEON_UNLOCK = 18
