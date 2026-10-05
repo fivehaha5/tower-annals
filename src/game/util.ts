@@ -18,8 +18,8 @@ export { CHAR_LEVEL_MAX } from './balance'
 export const GAME_NAME = '異塔編年'
 /** 作廢舊存檔：換 key */
 export const SAVE_KEY = 'tower-annals-save-v3'
-/** v4：技能卡經濟、技能本、暴走與增效曲線；舊 v3 存檔可遷移 */
-export const SAVE_VERSION = 4
+/** v5：破王徽／討伐訓練／克制王階正式獲取；可由 v3～v4 遷移 */
+export const SAVE_VERSION = 5
 export const GODKING_UNLOCK = 10000
 export const TICK_MS = 1000
 /** 定向掉落基礎水晶（再 × 輪迴） */
@@ -113,6 +113,7 @@ export const RESOURCE_META: {
   { key: 'essence', name: '法術精華', rarity: '史詩' },
   { key: 'skillbook', name: '技能卡', rarity: '史詩' },
   { key: 'soul', name: '神魂', rarity: '傳奇' },
+  { key: 'kingBadge', name: '破王徽', rarity: '神話' },
 ]
 
 /** 金鑽商店：1 單位資源需要的金鑽（水晶刻意脫鉤，避免金=水晶） */
@@ -405,6 +406,7 @@ export function emptyResources(): Resources {
     essence: 0,
     skillbook: 0,
     soul: 0,
+    kingBadge: 0,
   }
 }
 
@@ -417,6 +419,7 @@ export function addResources(a: Resources, b: Partial<Resources>): Resources {
     essence: a.essence + (b.essence ?? 0),
     skillbook: a.skillbook + (b.skillbook ?? 0),
     soul: a.soul + (b.soul ?? 0),
+    kingBadge: a.kingBadge + (b.kingBadge ?? 0),
   }
 }
 

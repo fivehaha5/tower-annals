@@ -40,6 +40,9 @@ import {
   BERSERK_BURN_GROW,
   BERSERK_DMG_GROW,
   BERSERK_DMG_MULT,
+  BOSS_CLEAR_KING_BADGE,
+  BOSS_CLEAR_KING_BADGE_BONUS,
+  BOSS_FAIL_KING_BADGE_CHANCE,
   EQUIP_LEVEL_SCALE,
   SINGLE_SKILL_FOCUS,
   SKILL_KIND_COOLDOWN_TURNS,
@@ -280,16 +283,26 @@ export function battleTick(state: GameState): {
     const goldLoss = Math.min(state.resources.gold, Math.max(0, Math.floor(1 + floor / 35)))
     state.resources.crystal -= crystalLoss
     state.resources.gold -= goldLoss
+    const failGains: Partial<Resources> = {}
+    if (
+      (state.idleMode === 'boss' || state.idleMode === 'godking') &&
+      Math.random() < BOSS_FAIL_KING_BADGE_CHANCE
+    ) {
+      failGains.kingBadge = 1
+    }
     state.battle = createBattle(state)
     const lossTip =
       crystalLoss || goldLoss
         ? `（損失 ${crystalLoss} 水晶${goldLoss ? `、${goldLoss} 金鑽` : ''}）`
         : ''
-    state.battle.log = `隊伍倒下，重整再戰${lossTip}`
+    const badgeTip = failGains.kingBadge ? ' · 拾得破王徽' : ''
+    state.battle.log = `隊伍倒下，重整再戰${lossTip}${badgeTip}`
     if (crystalLoss || goldLoss) {
       state.pendingToast = `戰敗懲罰：-${crystalLoss} 水晶${goldLoss ? `、-${goldLoss} 金鑽` : ''}`
+    } else if (failGains.kingBadge) {
+      state.pendingToast = '戰敗拾得破王徽 ×1'
     }
-    return { cleared: false, resources: {}, loot: {}, lootCost: emptyLootCost() }
+    return { cleared: false, resources: failGains, loot: {}, lootCost: emptyLootCost() }
   }
 
   return { cleared: false, resources: {}, loot: {}, lootCost: emptyLootCost() }
@@ -604,11 +617,31 @@ export function clearRewards(state: GameState): Partial<Resources> {
       essence: Math.max(0, Math.floor(2 + floor * 0.12)),
     }
   }
+  if (state.idleMode === 'hunt') {
+    const mini = floor % 5 === 0
+    return {
+      kingBadge: Math.floor(3 + floor * 0.55) + (mini ? Math.floor(4 + floor * 0.35) : 0),
+      crystal: Math.max(1, Math.floor(mainCrystalBase * 0.18)),
+    }
+  }
   if (state.idleMode === 'boss') {
     return {
       crystal: Math.floor(mainCrystalBase * 1.45),
       gold: Math.floor(6 + floor * 1.6),
       soul: Math.max(1, Math.floor(1 + floor * 0.22)),
+      kingBadge:
+        BOSS_CLEAR_KING_BADGE + (Math.random() < BOSS_CLEAR_KING_BADGE_BONUS ? 1 : 0),
+    }
+  }
+  if (state.idleMode === 'godking') {
+    return {
+      crystal: Math.floor(mainCrystalBase * 1.9),
+      gold: Math.floor(10 + floor * 2.4),
+      soul: Math.max(1, Math.floor(1 + floor * 0.5)),
+      essence: Math.max(1, Math.floor(floor * 0.28)),
+      skillbook: Math.max(1, Math.floor(floor * 0.22)),
+      kingBadge:
+        BOSS_CLEAR_KING_BADGE + (Math.random() < BOSS_CLEAR_KING_BADGE_BONUS ? 1 : 0),
     }
   }
   return {

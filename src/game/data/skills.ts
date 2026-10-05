@@ -272,7 +272,7 @@ export const SKILLS: SkillDef[] = [
 
   /**
    * 克制王階（antiKing）：對 isBoss 敵人額外傷害。
-   * 獲取方式未定——商店「克制王階」區僅佔位展示／試玩領取，勿當成正式掉落池。
+   * 獲取：首通王階自選 1／破王徽＋技能卡商店兌換；不進王塔／神王獨特掉落池。
    */
   {
     id: 'ak_w_atk',
@@ -372,7 +372,7 @@ export function uniqueSkillsBySource(source: 'boss' | 'godking'): SkillDef[] {
   return SKILLS.filter((s) => s.unique && s.source === source)
 }
 
-/** 克制王階技能池（非王塔／神王掉落；獲取佔位） */
+/** 克制王階技能池（非王塔／神王掉落） */
 export function antiKingSkills(): SkillDef[] {
   return SKILLS.filter((s) => s.source === 'antiKing')
 }

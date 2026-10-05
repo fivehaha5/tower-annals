@@ -96,12 +96,13 @@ import {
 import { RELIC_MAP, RELICS, relicsUnlockedByRebirth } from '../game/data/relics'
 import { countRebirthBonusCells, roleRebirthBonus } from '../game/mechanics'
 import { APP_VERSION, checkAppUpdate, warmImageCache } from '../appUpdate'
-import { SKILL_DUNGEON_UNLOCK } from '../game/balance'
+import { ANTI_KING_EXCHANGE_COST, SKILL_DUNGEON_UNLOCK } from '../game/balance'
 
 const MODE_LABEL: Record<IdleMode, string> = {
   main: '主塔',
   blueprint: '副塔',
   skill: '技能本',
+  hunt: '討伐訓練',
   boss: '王塔',
   godking: '異域神王',
 }
@@ -198,6 +199,8 @@ function towerPaintSig(state: GameState): string {
     ds?.targetId ?? '',
     state.firstWin.boss ? '1' : '0',
     state.firstWin.godking ? '1' : '0',
+    state.pendingAntiKingPick ? '1' : '0',
+    state.pushMode.hunt ?? 'push',
   ].join('|')
 }
 
@@ -406,14 +409,16 @@ function floorSelectPanel(state: GameState): string {
     </div>`
   }
 
-  const push = state.pushMode[mode as 'main' | 'blueprint' | 'skill']
+  const push = state.pushMode[mode as 'main' | 'blueprint' | 'skill' | 'hunt']
   const open = uiFlag('__foldFarm')
   const berserking = !!state.battle?.berserk
+  const huntHint =
+    mode === 'hunt' ? ' · 主產破王徽' : mode === 'skill' ? ' · 主產技能卡' : ''
   return `<div class="panel compact-panel">
     <div class="section-head">
       <div>
         <div class="section-title">掛機 · ${formatNum(farm)}F · ${push === 'push' ? '沖層' : '原地'}</div>
-        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(enemyTargetPower(mode, farm))}${berserking ? ' · 暴走中' : ''}</div>
+        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(enemyTargetPower(mode, farm))}${huntHint}${berserking ? ' · 暴走中' : ''}</div>
       </div>
       ${foldBtn('__foldFarm', '收起設定', '展開設定')}
     </div>
@@ -594,17 +599,20 @@ function towerView(state: GameState): string {
 
   return `
     <div class="mode-tabs">
-      ${(['main', 'blueprint', 'skill', 'boss', 'godking'] as IdleMode[])
+      ${(['main', 'blueprint', 'skill', 'hunt', 'boss', 'godking'] as IdleMode[])
         .map((m) => {
           const lockedSkill = m === 'skill' && state.floors.main < SKILL_DUNGEON_UNLOCK
-          const disabled = (m === 'godking' && lockedGod) || lockedSkill
+          const lockedHunt = m === 'hunt' && !actions.canUnlockHunt()
+          const disabled = (m === 'godking' && lockedGod) || lockedSkill || lockedHunt
           const farm = state.farmFloor?.[m] ?? state.floors[m]
           const lockHint =
             m === 'godking' && lockedGod
               ? `(主塔${GODKING_UNLOCK})`
               : lockedSkill
                 ? `(主塔${SKILL_DUNGEON_UNLOCK})`
-                : ''
+                : lockedHunt
+                  ? '(首通王階)'
+                  : ''
           return `<button data-mode="${m}" class="${state.idleMode === m ? 'active' : ''}" ${disabled ? 'disabled' : ''}>${MODE_LABEL[m]}${lockHint}<br/><span class="muted">掛${formatNum(farm)}/解${formatNum(state.floors[m])}</span></button>`
         })
         .join('')}
@@ -1300,7 +1308,11 @@ function shopSkillsView(state: GameState): string {
   const ownedAnti = new Set(
     state.skillItems.filter((s) => SKILL_MAP[s.skillId]?.source === 'antiKing').map((s) => s.skillId),
   )
-  const missingAnti = antiKingSkills().filter((d) => !ownedAnti.has(d.id)).length
+  const cost = ANTI_KING_EXCHANGE_COST
+  const canPay =
+    (state.resources.kingBadge ?? 0) >= cost.kingBadge &&
+    state.resources.skillbook >= cost.skillbook &&
+    state.resources.crystal >= cost.crystal
   return `
     <div class="panel">
       ${shopBackBtn()}
@@ -1315,10 +1327,8 @@ function shopSkillsView(state: GameState): string {
     </div>
     <div class="panel">
       <div class="section-title">克制王階</div>
-      <div class="muted">專克王塔／神王（對王階傷害加成）。正式獲取方式未定／敬請期待；下列為內容預覽。</div>
-      <button class="btn ${missingAnti ? 'primary' : ''}" data-act="claim-antiking" style="width:100%;margin-top:8px" ${missingAnti ? '' : 'disabled'}>
-        ${missingAnti ? `試玩領取（獲取未定）· 可領 ${missingAnti} 個` : '已持有全部（獲取方式仍未定）'}
-      </button>
+      <div class="muted">專克王塔／神王。首通王階可自選 1 枚；其餘以破王徽＋技能卡兌換。討伐訓練主產破王徽。持有 破王徽 ${formatNum(state.resources.kingBadge ?? 0)} · 技能卡 ${formatNum(state.resources.skillbook)} · 水晶 ${formatNum(state.resources.crystal)}</div>
+      <div class="muted" style="margin-top:4px">兌換價：破王徽 ${formatNum(cost.kingBadge)}＋技能卡 ${formatNum(cost.skillbook)}＋水晶 ${formatNum(cost.crystal)}</div>
       <div class="list" style="margin-top:8px">
         ${antiPool
           .map((def) => {
@@ -1328,7 +1338,13 @@ function shopSkillsView(state: GameState): string {
               <div class="title">${ROLE_LABEL[def.role]} · ${SKILL_KIND_LABEL[def.kind]} · ★${def.name}${owned ? '' : ' · 未持有'}</div>
               <div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(def))}${skillSpecialLine(def) ? ` · ${escapeHtml(skillSpecialLine(def))}` : ''}</div>
               <div class="muted">${escapeHtml(def.desc)}</div>
-              <div class="muted" style="margin-top:4px">${owned ? '已在技能庫' : '獲取方式未定／敬請期待'}</div>
+              <div class="btn-row" style="margin-top:6px">
+                ${
+                  owned
+                    ? `<button class="btn" disabled>已持有 · 請至養成強化</button>`
+                    : `<button class="btn primary" data-act="exchange-antiking" data-skill="${def.id}" ${canPay ? '' : 'disabled'}>兌換</button>`
+                }
+              </div>
             </div></div>`
           })
           .join('')}
@@ -1645,11 +1661,11 @@ function gameGuideModal(): string {
   return `<div class="modal guide-modal" data-act="guide-close"><div class="sheet" data-stop="1">
     <h3>遊戲引導</h3>
     <div class="muted" style="text-align:left;line-height:1.55;max-height:55vh;overflow-y:auto">
-      <p><strong>爬塔</strong>：主塔／副塔／技能本可沖層或原地刷（副塔／技能本每 5 層小首領）；技能本主產技能卡（主塔 ${SKILL_DUNGEON_UNLOCK} 解鎖）。戰敗會扣水晶／金鑽。王塔／神王可空刷（低機率）或定向（水晶＋技能卡隨輪迴遞增）；資源不足會改回空刷。</p>
+      <p><strong>爬塔</strong>：主塔／副塔／技能本／討伐訓練可沖層或原地刷（副塔／技能本／討伐每 5 層小首領）；技能本主產技能卡（主塔 ${SKILL_DUNGEON_UNLOCK} 解鎖）；討伐訓練主產破王徽（首通王階後解鎖）。戰敗會扣水晶／金鑽。王塔／神王可空刷（低機率）或定向（水晶＋技能卡隨輪迴遞增）；資源不足會改回空刷。</p>
       <p><strong>職業編隊</strong>：戰士、法師、牧師各有獨立 loadout——出戰角色、七部位裝備、三技能格、遺物。換角色不改裝備配置。</p>
       <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），高品機率偏低；強化只加等級，不能事後升品。</p>
       <p><strong>技能</strong>：商店普通／稀有（金鑽）；強化耗技能卡（第 n 階＝第 n 個質數×100）；更高階靠升階或王塔／神王獨特技，升階耗同名卡。同類技能 CD＝2 回合，三技能輪替。戰鬥超過 20 完整回合敵方暴走。介面會顯示攻／盾／療係數與特效數字。</p>
-      <p><strong>克制王階</strong>：另有一組專克王塔／神王之技能（對王階傷害加成）。正式獲取方式未定；商店可預覽，並有「試玩領取」佔位。</p>
+      <p><strong>克制王階</strong>：專克王塔／神王（對王階傷害加成）。首通王階可自選 1 枚；其餘以破王徽＋技能卡（＋少量水晶）於商店兌換。破王徽來自王階通關／戰敗機率與討伐訓練。不進王塔／神王獨特掉落池。</p>
       <p><strong>後勤</strong>：每工位最多 ${workStationCap(1)} 人（主塔每 1000 層 +1，上限 6）；每 ${WORK_BATCH_SEC} 秒一批；主塔每 100 層 +4%（上限 80%）。含打造、訂單、派遣。</p>
       <p><strong>養成消耗</strong>：進階神魂、增效同名卡（前期弱、後期漸強）、技能卡強化、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。</p>
       <p><strong>派遣</strong>：席位有上限；獎勵隨主塔層遞增。非出戰、非打工角色可遠征。</p>
@@ -1666,7 +1682,7 @@ function settingsView(_state: GameState): string {
   return `
     <div class="panel">
       <div class="section-title">設置 · ${GAME_NAME}</div>
-      <p class="muted">v4 存檔（可由 v3 遷移）。本地自動存；可匯出檔案／存檔碼做雲端備份。</p>
+      <p class="muted">v5 存檔（可由 v3／v4 遷移）。本地自動存；可匯出檔案／存檔碼做雲端備份。</p>
       <button class="btn" data-act="guide" style="width:100%;margin-bottom:8px">遊戲引導</button>
       <div class="btn-row">
         <button class="btn primary" data-act="savelocal">立即存檔</button>
@@ -1719,6 +1735,38 @@ function offlineModal(state: GameState): string {
     ${lines || '<div class="muted">無資源變化</div>'}
     ${dropLines ? `<div class="section-title" style="margin-top:10px">掉落</div>${dropLines}` : ''}
     <button class="btn primary" data-act="dismiss-offline" style="width:100%;margin-top:12px">確認</button>
+  </div></div>`
+}
+
+/** 首通王階：自選 1 枚克制技能（優先標示編隊職業） */
+function antiKingPickModal(state: GameState): string {
+  if (!state.pendingAntiKingPick || state.antiKingIntroDone) return ''
+  const owned = new Set(
+    state.skillItems.filter((s) => SKILL_MAP[s.skillId]?.source === 'antiKing').map((s) => s.skillId),
+  )
+  const formRoles = new Set(state.formation)
+  const pool = antiKingSkills().filter((d) => !owned.has(d.id))
+  const preferred = pool.filter((d) => formRoles.has(d.role))
+  const rest = pool.filter((d) => !formRoles.has(d.role))
+  const ordered = [...preferred, ...rest]
+  if (!ordered.length) return ''
+  const card = (def: (typeof ordered)[0], highlight: boolean) => {
+    const tip = skillEffectLine(def)
+    return `<button class="card tap-target" data-act="pick-antiking" data-skill="${def.id}" style="text-align:left;width:100%;${highlight ? 'border-color:#6a5420' : ''}">
+      <div class="body">
+        <div class="title">${ROLE_LABEL[def.role]} · ${SKILL_KIND_LABEL[def.kind]} · ★${def.name}${highlight ? ' · 推薦' : ''}</div>
+        <div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(def))}${skillSpecialLine(def) ? ` · ${escapeHtml(skillSpecialLine(def))}` : ''}</div>
+        <div class="muted">${escapeHtml(def.desc)}</div>
+      </div>
+    </button>`
+  }
+  return `<div class="modal"><div class="sheet" data-stop="1">
+    <h3>首通王階 · 克制技能</h3>
+    <p class="muted" style="text-align:left">選擇 1 枚克制王階技能（僅此一次）。編隊職業技能已標「推薦」；其餘可於商店以破王徽兌換。</p>
+    <div class="list" style="margin-top:10px;max-height:50vh;overflow-y:auto">
+      ${preferred.map((d) => card(d, true)).join('')}
+      ${rest.map((d) => card(d, false)).join('')}
+    </div>
   </div></div>`
 }
 
@@ -1922,7 +1970,8 @@ export function render(root: HTMLElement, kind: 'tick' | 'ui' = 'ui') {
   }
 
   // 掛機 tick：盡量局部更新，避免每秒 innerHTML 拆掉立繪 img 重抓圖
-  if (kind === 'tick') {
+  // 待選克制技能時強制整頁，以顯示自選彈窗
+  if (kind === 'tick' && !state.pendingAntiKingPick) {
     const towerSig = state.tab === 'tower' ? towerPaintSig(state) : ''
     const towerUnchanged = state.tab !== 'tower' || towerSig === lastTowerPaintSig
     if (isEditingField(root) || towerUnchanged || state.tab !== 'tower') {
@@ -2000,6 +2049,7 @@ export function render(root: HTMLElement, kind: 'tick' | 'ui' = 'ui') {
     <div class="content ${tabChanged ? 'content-enter' : ''}">${body}</div>
     ${nav(state)}
     ${offlineModal(state)}
+    ${antiKingPickModal(state)}
     ${gameGuideModal()}
     ${state.tab === 'train' && trainPage() === 'dex' ? portraitLightbox() : ''}
   </div>`
@@ -2321,7 +2371,7 @@ function bind(root: HTMLElement) {
         actions.setFarmFloor(mode, actions.getState().floors[mode])
       }
       if (act === 'pushmode') {
-        const mode = (el as HTMLElement).dataset.mode as 'main' | 'blueprint' | 'skill'
+        const mode = (el as HTMLElement).dataset.mode as 'main' | 'blueprint' | 'skill' | 'hunt'
         const push = (el as HTMLElement).dataset.push as PushMode
         actions.setPushMode(mode, push)
       }
@@ -2368,9 +2418,13 @@ function bind(root: HTMLElement) {
         const err = actions.shopBuySkill(skill, rarity)
         toast(root, err ?? '已購入技能')
       }
-      if (act === 'claim-antiking') {
-        const err = actions.claimAntiKingSkillsPreview()
-        toast(root, err ?? '已試玩領取克制王階技能')
+      if (act === 'exchange-antiking' && skill) {
+        const err = actions.shopExchangeAntiKing(skill)
+        toast(root, err ?? '已兌換克制王階技能')
+      }
+      if (act === 'pick-antiking' && skill) {
+        const err = actions.pickAntiKingIntro(skill)
+        toast(root, err ?? '已獲得克制王階技能')
       }
       if (act === 'dropaim') {
         const mode = (el as HTMLElement).dataset.mode as 'boss' | 'godking'

@@ -13,7 +13,7 @@ export type Rarity =
 
 export type SkillKind = 'attack' | 'defense' | 'support'
 
-export type IdleMode = 'main' | 'blueprint' | 'skill' | 'boss' | 'godking'
+export type IdleMode = 'main' | 'blueprint' | 'skill' | 'hunt' | 'boss' | 'godking'
 
 export type WorkJob = 'gold' | 'forge' | 'essence' | 'skillbook' | 'soul'
 
@@ -30,6 +30,7 @@ export type FloorMap = {
   main: number
   blueprint: number
   skill: number
+  hunt: number
   boss: number
   godking: number
 }
@@ -42,6 +43,8 @@ export interface Resources {
   essence: number
   skillbook: number
   soul: number
+  /** 破王徽：兌換克制王階技能 */
+  kingBadge: number
 }
 
 export interface Stats {
@@ -107,7 +110,7 @@ export interface SkillDef {
   unique?: boolean
   /**
    * boss／godking＝王塔／神王掉落獨特技；
-   * antiKing＝克制王階技（獲取方式未定，見商店佔位領取）
+   * antiKing＝克制王階技（首通自選／破王徽兌換；不進王塔／神王獨特池）
    */
   source?: 'boss' | 'godking' | 'antiKing'
   effects?: SkillEffect[]
@@ -343,6 +346,7 @@ export interface GameState {
     main: PushMode
     blueprint: PushMode
     skill: PushMode
+    hunt: PushMode
   }
   idleMode: IdleMode
   battle: BattleSnapshot | null
@@ -357,6 +361,12 @@ export interface GameState {
     boss: boolean
     godking: boolean
   }
+  /**
+   * 首通王階克制技能自選：僅一次。
+   * pending＝待玩家選；done＝已領過（含舊試玩領取遷移）。
+   */
+  antiKingIntroDone?: boolean
+  pendingAntiKingPick?: boolean
   dropSettings: {
     boss: DropSettings
     godking: DropSettings

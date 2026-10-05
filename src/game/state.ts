@@ -26,7 +26,11 @@ import {
   teamPower,
   workBoostMult,
 } from './combat'
-import { SKILL_CARD_STARTER_CUSHION, SKILL_DUNGEON_UNLOCK } from './balance'
+import {
+  ANTI_KING_EXCHANGE_COST,
+  SKILL_CARD_STARTER_CUSHION,
+  SKILL_DUNGEON_UNLOCK,
+} from './balance'
 import {
   DISPATCH_OPTIONS,
   WORK_BATCH_SEC,
@@ -104,6 +108,15 @@ const KINDS: SkillKind[] = ['attack', 'defense', 'support']
 const ROLES: Role[] = ['warrior', 'mage', 'priest']
 
 export type EmitKind = 'tick' | 'ui'
+
+/** 討伐訓練：首通王塔或神王後解鎖 */
+export function canUnlockHuntFrom(s: GameState): boolean {
+  return !!(s.firstWin?.boss || s.firstWin?.godking)
+}
+
+export function canUnlockHunt(): boolean {
+  return canUnlockHuntFrom(state)
+}
 
 export function getState(): GameState {
   return state
@@ -211,9 +224,9 @@ export function createNewState(): GameState {
     orders: [],
     relicInventory: [],
     dex: [],
-    floors: { main: 1, blueprint: 1, skill: 1, boss: 1, godking: 1 },
-    farmFloor: { main: 1, blueprint: 1, skill: 1, boss: 1, godking: 1 },
-    pushMode: { main: 'push', blueprint: 'push', skill: 'push' },
+    floors: { main: 1, blueprint: 1, skill: 1, hunt: 1, boss: 1, godking: 1 },
+    farmFloor: { main: 1, blueprint: 1, skill: 1, hunt: 1, boss: 1, godking: 1 },
+    pushMode: { main: 'push', blueprint: 'push', skill: 'push', hunt: 'push' },
     idleMode: 'main',
     battle: null,
     lastTick: Date.now(),
@@ -221,6 +234,8 @@ export function createNewState(): GameState {
     starterDone: false,
     pendingOffline: null,
     firstWin: { boss: false, godking: false },
+    antiKingIntroDone: false,
+    pendingAntiKingPick: false,
     dropSettings: {
       boss: { aim: 'none' },
       godking: { aim: 'none' },
@@ -249,6 +264,7 @@ export function normalizeState(s: GameState): GameState {
   s.resources.essence ??= 0
   s.resources.skillbook ??= 0
   s.resources.soul ??= 0
+  s.resources.kingBadge ??= 0
 
   s.skillItems ??= []
   s.loadouts ??= emptyLoadouts()
@@ -265,13 +281,16 @@ export function normalizeState(s: GameState): GameState {
   s.dispatches ??= []
   s.orders ??= []
   s.relicInventory ??= []
-  s.floors ??= { main: 1, blueprint: 1, skill: 1, boss: 1, godking: 1 }
+  s.floors ??= { main: 1, blueprint: 1, skill: 1, hunt: 1, boss: 1, godking: 1 }
   s.floors.skill ??= 1
+  s.floors.hunt ??= 1
   s.farmFloor ??= { ...s.floors }
   s.farmFloor.skill ??= s.floors.skill
-  s.pushMode ??= { main: 'push', blueprint: 'push', skill: 'push' }
+  s.farmFloor.hunt ??= s.floors.hunt
+  s.pushMode ??= { main: 'push', blueprint: 'push', skill: 'push', hunt: 'push' }
   s.pushMode.skill ??= 'push'
-  for (const m of ['main', 'blueprint', 'skill', 'boss', 'godking'] as const) {
+  s.pushMode.hunt ??= 'push'
+  for (const m of ['main', 'blueprint', 'skill', 'hunt', 'boss', 'godking'] as const) {
     s.floors[m] = Math.max(1, s.floors[m] ?? 1)
     s.farmFloor[m] = Math.max(1, Math.min(s.farmFloor[m] ?? s.floors[m], s.floors[m]))
   }
@@ -285,6 +304,21 @@ export function normalizeState(s: GameState): GameState {
     if (s.idleMode === ('skill' as IdleMode) && s.floors.main < SKILL_DUNGEON_UNLOCK) {
       s.idleMode = 'main'
     }
+  }
+
+  // v4→v5：破王徽／討伐訓練／克制王階正式路徑
+  if (fromVersion < 5) {
+    s.resources.kingBadge = s.resources.kingBadge ?? 0
+    s.floors.hunt = Math.max(1, s.floors.hunt ?? 1)
+    s.farmFloor.hunt = Math.max(1, Math.min(s.farmFloor.hunt ?? 1, s.floors.hunt))
+    s.pushMode.hunt = s.pushMode.hunt ?? 'push'
+  }
+  // 舊試玩領取：已持有任一克制技 → 視為已完成首通自選
+  const ownedAnti = s.skillItems.some((sk) => SKILL_MAP[sk.skillId]?.source === 'antiKing')
+  s.antiKingIntroDone = s.antiKingIntroDone === true || ownedAnti
+  s.pendingAntiKingPick = s.antiKingIntroDone ? false : !!s.pendingAntiKingPick
+  if (s.idleMode === ('hunt' as IdleMode) && !canUnlockHuntFrom(s)) {
+    s.idleMode = 'main'
   }
   s.roster = mergeRosterStacks((s.roster ?? []).filter((c) => !!CHAR_MAP[c.defId]))
   for (const eq of s.equips ?? []) {
@@ -500,6 +534,7 @@ export function setTab(tab: GameState['tab']) {
 export function setIdleMode(mode: IdleMode) {
   if (mode === 'godking' && state.floors.main < GODKING_UNLOCK) return
   if (mode === 'skill' && state.floors.main < SKILL_DUNGEON_UNLOCK) return
+  if (mode === 'hunt' && !canUnlockHunt()) return
   if (state.idleMode !== mode) state.lastLootMsg = undefined
   state.idleMode = mode
   state.farmFloor[mode] = Math.max(1, Math.min(state.farmFloor[mode] ?? 1, state.floors[mode]))
@@ -515,7 +550,10 @@ export function setFarmFloor(mode: IdleMode, floor: number) {
   emit()
 }
 
-export function setPushMode(mode: 'main' | 'blueprint' | 'skill', push: PushMode) {
+export function setPushMode(
+  mode: 'main' | 'blueprint' | 'skill' | 'hunt',
+  push: PushMode,
+) {
   state.pushMode[mode] = push
   emit()
 }
@@ -523,7 +561,7 @@ export function setPushMode(mode: 'main' | 'blueprint' | 'skill', push: PushMode
 function advanceAfterClear(mode: IdleMode) {
   const farm = state.farmFloor[mode]
   const max = state.floors[mode]
-  if (mode === 'main' || mode === 'blueprint' || mode === 'skill') {
+  if (mode === 'main' || mode === 'blueprint' || mode === 'skill' || mode === 'hunt') {
     if (state.pushMode[mode] === 'push') {
       if (farm >= max) {
         state.floors[mode] = farm + 1
@@ -606,6 +644,39 @@ function applyLoot(loot: LootDrop, msgs: string[]) {
   }
 }
 
+function autoGrantAntiKingIntro(): string | null {
+  if (state.antiKingIntroDone) return null
+  const owned = new Set(
+    state.skillItems.filter((s) => SKILL_MAP[s.skillId]?.source === 'antiKing').map((s) => s.skillId),
+  )
+  const pool = antiKingSkills().filter((d) => !owned.has(d.id))
+  if (!pool.length) {
+    state.antiKingIntroDone = true
+    state.pendingAntiKingPick = false
+    return null
+  }
+  const roles = new Set(state.formation)
+  const preferred = pool.filter((d) => roles.has(d.role))
+  const candidates = preferred.length ? preferred : pool
+  const def = candidates[Math.floor(Math.random() * candidates.length)]!
+  pushSkillItem(def.id, dropSkillRarity(def), 1)
+  state.antiKingIntroDone = true
+  state.pendingAntiKingPick = false
+  return def.name
+}
+
+function triggerAntiKingIntro(recordOffline: boolean) {
+  if (state.antiKingIntroDone || state.pendingAntiKingPick) return
+  if (recordOffline) {
+    const name = autoGrantAntiKingIntro()
+    if (name) {
+      state.pendingToast = `首通王階（離線）：獲得克制技能「${name}」`
+    }
+    return
+  }
+  state.pendingAntiKingPick = true
+}
+
 export function simulateTicks(ticks: number, recordOffline = false, rawSeconds?: number): OfflineReport | null {
   if (ticks <= 0) return null
   let gains = emptyResources()
@@ -615,6 +686,8 @@ export function simulateTicks(ticks: number, recordOffline = false, rawSeconds?:
   const msgs: string[] = []
 
   for (let i = 0; i < ticks; i++) {
+    // 待選克制技能時暫停爬塔，後勤仍結算
+    if (state.pendingAntiKingPick) continue
     const result = battleTick(state)
     gains = addResources(gains, result.resources)
     if (result.cleared) {
@@ -632,7 +705,11 @@ export function simulateTicks(ticks: number, recordOffline = false, rawSeconds?:
         applyLoot(result.loot, msgs)
       }
       if (mode === 'boss' || mode === 'godking') {
-        if (!state.firstWin[mode]) state.firstWin[mode] = true
+        const wasFirst = !state.firstWin[mode]
+        if (wasFirst) {
+          state.firstWin[mode] = true
+          triggerAntiKingIntro(recordOffline)
+        }
       }
       advanceAfterClear(mode)
       floorsCleared += 1
@@ -1102,26 +1179,40 @@ export function shopBuySkill(skillId: string, rarity: Rarity): string | null {
   return null
 }
 
-/**
- * 克制王階技能：獲取方式未定。
- * 臨時試玩領取——僅補齊尚未持有的 antiKing 技能（史詩），正式獲取路徑日後替換。
- */
-export function claimAntiKingSkillsPreview(): string | null {
-  const pool = antiKingSkills()
-  let granted = 0
-  for (const def of pool) {
-    if (state.skillItems.some((s) => s.skillId === def.id)) continue
-    pushSkillItem(def.id, dropSkillRarity(def), 1)
-    granted++
-  }
-  if (granted === 0) {
-    state.pendingToast = '已持有全部克制王階技能（獲取方式仍未定）'
-    emit()
-    return '已持有全部克制王階技能'
-  }
-  state.pendingToast = `試玩領取：獲得 ${granted} 個克制王階技能（獲取方式未定／敬請期待）`
+/** 首通王階：自選一枚克制王階技能（僅一次） */
+export function pickAntiKingIntro(skillId: string): string | null {
+  if (!state.pendingAntiKingPick || state.antiKingIntroDone) return '目前沒有待選的克制技能'
+  const def = SKILL_MAP[skillId]
+  if (!def || def.source !== 'antiKing') return '無效的克制技能'
+  if (state.skillItems.some((s) => s.skillId === skillId)) return '已持有此技能'
+  pushSkillItem(skillId, dropSkillRarity(def), 1)
+  state.pendingAntiKingPick = false
+  state.antiKingIntroDone = true
+  state.pendingToast = `首通王階：獲得克制技能「${def.name}」`
   emit()
   return null
+}
+
+/** 商店：破王徽＋技能卡（＋少量水晶）兌換未持有的克制王階技能 */
+export function shopExchangeAntiKing(skillId: string): string | null {
+  const def = SKILL_MAP[skillId]
+  if (!def || def.source !== 'antiKing') return '無法兌換此技能'
+  if (state.skillItems.some((s) => s.skillId === skillId)) return '已持有此技能'
+  const cost = ANTI_KING_EXCHANGE_COST
+  if ((state.resources.kingBadge ?? 0) < cost.kingBadge) return '破王徽不足'
+  if (state.resources.skillbook < cost.skillbook) return '技能卡不足'
+  if (state.resources.crystal < cost.crystal) return '異界水晶不足'
+  state.resources.kingBadge -= cost.kingBadge
+  state.resources.skillbook -= cost.skillbook
+  state.resources.crystal -= cost.crystal
+  pushSkillItem(skillId, dropSkillRarity(def), 1)
+  state.pendingToast = `兌換成功：克制技能「${def.name}」`
+  emit()
+  return null
+}
+
+export function antiKingExchangeCost() {
+  return ANTI_KING_EXCHANGE_COST
 }
 
 export function availableEquipTiers(): number {

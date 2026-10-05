@@ -145,6 +145,29 @@ export const ENEMY_SHIELD_FROM_POWER = 0.24
 /** 技能本解鎖所需主塔層數 */
 export const SKILL_DUNGEON_UNLOCK = 25
 
+/**
+ * 討伐訓練（刷破王徽）：王塔無主塔層門檻，故以「首通王塔／神王」解鎖。
+ * 見 state.firstWin.boss｜godking。
+ */
+export const HUNT_UNLOCK_AFTER_FIRST_BOSS = true
+
+/** 王塔／神王通關破王徽（保底） */
+export const BOSS_CLEAR_KING_BADGE = 1
+/** 通關時額外 +1 破王徽機率 */
+export const BOSS_CLEAR_KING_BADGE_BONUS = 0.28
+/** 王塔／神王戰敗掉破王徽機率 */
+export const BOSS_FAIL_KING_BADGE_CHANCE = 0.2
+
+/**
+ * 商店兌換一枚未持有的克制王階技能。
+ * 已持有則走技能卡強化／升階，不重複兌換。
+ */
+export const ANTI_KING_EXCHANGE_COST = {
+  kingBadge: 40,
+  skillbook: 200,
+  crystal: 600,
+} as const
+
 /** 新存檔／遷移贈送的技能卡緩衝 */
 export const SKILL_CARD_STARTER_CUSHION = 600
 

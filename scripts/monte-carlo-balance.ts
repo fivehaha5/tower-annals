@@ -29,7 +29,7 @@ import type { IdleMode } from '../src/game/types.ts'
 type PathProfile = {
   name: string
   hours: number
-  focus: 'pushMain' | 'farmBlueprint' | 'farmSkill' | 'grindStuck'
+  focus: 'pushMain' | 'farmBlueprint' | 'farmSkill' | 'farmHunt' | 'grindStuck'
   spendSkillCards: boolean
   /** grindStuck：相對戰力倍率，1=同戰力層附近 */
   stuckPowerRatio?: number
@@ -41,9 +41,11 @@ type RunStats = {
   mainFloor: number
   blueprintFloor: number
   skillFloor: number
+  huntFloor: number
   crystal: number
   blueprint: number
   skillbook: number
+  kingBadge: number
   skillLevels: number[]
   teamCp: number
   enemyCpAtFarm: number
@@ -169,6 +171,12 @@ function runPath(profile: PathProfile): RunStats {
         setPushMode('skill', 'stay')
         setFarmFloor('skill', Math.max(1, st.floors.skill))
       }
+    } else if (profile.focus === 'farmHunt') {
+      // 模擬首通王階後刷破王徽
+      st.firstWin.boss = true
+      setIdleMode('hunt')
+      setPushMode('hunt', 'stay')
+      setFarmFloor('hunt', Math.max(1, st.floors.hunt))
     } else if (!stuckFloorPicked) {
       // 先短暫養成，再挑接近戰力的層（可拖長、測暴走）
       setIdleMode('main')
@@ -230,9 +238,11 @@ function runPath(profile: PathProfile): RunStats {
     mainFloor: end.floors.main,
     blueprintFloor: end.floors.blueprint,
     skillFloor: end.floors.skill,
+    huntFloor: end.floors.hunt,
     crystal: Math.floor(end.resources.crystal),
     blueprint: Math.floor(end.resources.blueprint),
     skillbook: Math.floor(end.resources.skillbook),
+    kingBadge: Math.floor(end.resources.kingBadge ?? 0),
     skillLevels: snapshotSkillLevels(),
     teamCp: teamPower(end),
     enemyCpAtFarm: enemyTargetPower(mode, farm),
@@ -256,6 +266,7 @@ function main() {
     { name: '主塔沖層 48h', hours: 48, focus: 'pushMain', spendSkillCards: true },
     { name: '副塔刷藍圖 24h', hours: 24, focus: 'farmBlueprint', spendSkillCards: false },
     { name: '技能本刷卡 24h', hours: 24, focus: 'farmSkill', spendSkillCards: true },
+    { name: '討伐刷破王徽 12h', hours: 12, focus: 'farmHunt', spendSkillCards: false },
     {
       name: '近戰力磨關 8h',
       hours: 8,
@@ -279,10 +290,10 @@ function main() {
     results.push(r)
     console.log(`--- ${r.name} ---`)
     console.log(
-      `主塔 ${r.mainFloor}F · 副塔 ${r.blueprintFloor}F · 技能本 ${r.skillFloor}F · 清層≈${r.floorsCleared}`,
+      `主塔 ${r.mainFloor}F · 副塔 ${r.blueprintFloor}F · 技能本 ${r.skillFloor}F · 討伐 ${r.huntFloor}F · 清層≈${r.floorsCleared}`,
     )
     console.log(
-      `資源 水晶 ${fmt(r.crystal)} · 藍圖 ${fmt(r.blueprint)} · 技能卡 ${fmt(r.skillbook)}`,
+      `資源 水晶 ${fmt(r.crystal)} · 藍圖 ${fmt(r.blueprint)} · 技能卡 ${fmt(r.skillbook)} · 破王徽 ${fmt(r.kingBadge)}`,
     )
     console.log(
       `戰力 隊 ${fmt(r.teamCp)} vs 掛機敵 ${fmt(r.enemyCpAtFarm)} · 技能Lv [${r.skillLevels.join(',')}]`,
@@ -296,6 +307,7 @@ function main() {
   const push = results.find((r) => r.name.includes('沖層'))
   const bp = results.find((r) => r.name.includes('藍圖'))
   const sk = results.find((r) => r.name.includes('技能本'))
+  const hunt = results.find((r) => r.name.includes('破王徽'))
   const stuck = results.find((r) => r.name.includes('磨關'))
 
   console.log('=== 摘要 ===')
@@ -312,6 +324,11 @@ function main() {
   if (sk) {
     console.log(
       `· 24h 技能本路徑技能卡 ${fmt(sk.skillbook)}，技能Lv [${sk.skillLevels.join(',')}]`,
+    )
+  }
+  if (hunt) {
+    console.log(
+      `· 12h 討伐路徑破王徽 ${fmt(hunt.kingBadge)}（討伐 ${hunt.huntFloor}F）`,
     )
   }
   if (stuck) {

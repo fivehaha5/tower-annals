@@ -66,14 +66,16 @@ export function enemyElement(floor: number): Element {
   return pool[floor % pool.length]
 }
 
-/** 主塔／副塔：每 10／5 層小 Boss；王塔／神王：首領 */
+/** 主塔／副塔／討伐：小首領；王塔／神王：首領（isBoss） */
 export function isBossFloor(mode: IdleMode, floor: number): boolean {
   if (mode === 'boss' || mode === 'godking') return true
   return isMiniBossFloor(mode, floor)
 }
 
 export function isMiniBossFloor(mode: IdleMode, floor: number): boolean {
-  if (mode === 'blueprint' || mode === 'skill') return floor > 0 && floor % 5 === 0
+  if (mode === 'blueprint' || mode === 'skill' || mode === 'hunt') {
+    return floor > 0 && floor % 5 === 0
+  }
   if (mode === 'main') return floor > 0 && floor % 10 === 0
   return false
 }
@@ -88,7 +90,11 @@ export function enemyName(mode: IdleMode, floor: number): string {
     return c.name
   }
   if (isMiniBossFloor(mode, floor)) {
-    return `小首領·${MINI_BOSS_NAMES[floor % MINI_BOSS_NAMES.length]}`
+    const mini = MINI_BOSS_NAMES[floor % MINI_BOSS_NAMES.length]
+    return mode === 'hunt' ? `討伐木樁·${mini}` : `小首領·${mini}`
+  }
+  if (mode === 'hunt') {
+    return `訓練殘影·${NORMAL_NAMES[floor % NORMAL_NAMES.length]}`
   }
   return NORMAL_NAMES[floor % NORMAL_NAMES.length]
 }
@@ -111,7 +117,8 @@ export function enemyPortrait(mode: IdleMode, floor: number): string | undefined
  * 目標戰力對齊 balance.ts 里程碑：
  * - 主塔：前期可推進，中後期吃轉生／裝備階
  * - 副塔：一層 ≈ 主塔 ×100 層
- * - 技能本：一層 ≈ 主塔 ×45 層（刷技能卡）
+ * - 技能本：一層 ≈ 主塔 ×14 層（刷技能卡）
+ * - 討伐訓練：一層 ≈ 主塔 ×16 層（刷破王徽；非 isBoss，不觸發克制王階）
  * - 王塔／神王：獨立指數軸
  */
 export function enemyTargetPower(mode: IdleMode, floor: number): number {
@@ -122,6 +129,8 @@ export function enemyTargetPower(mode: IdleMode, floor: number): number {
   if (mode === 'blueprint') return enemyTargetPower('main', f * 100)
   // 技能本：約主塔 ×14 層難度，主塔 25 解鎖後可穩刷低層技能卡
   if (mode === 'skill') return enemyTargetPower('main', Math.max(8, f * 14))
+  // 討伐訓練：略高於技能本，首通王階後掛刷破王徽
+  if (mode === 'hunt') return enemyTargetPower('main', Math.max(12, f * 16))
   return mainEnemyPower(f)
 }
 
