@@ -21,7 +21,7 @@ export function enemyDisplayPower(stats: Pick<Stats, 'hp' | 'shield' | 'atk'> & 
 /** 高難度種子額外生命（log soft），讓數字高的怪真的更肉 */
 function hpScaleForSeed(seed: number): number {
   const s = Math.max(1, seed)
-  return 1 + Math.log10(1 + s / 25_000) * 0.55
+  return 1 + Math.log10(1 + s / 40_000) * 0.4
 }
 
 const NORMAL_NAMES = [
@@ -129,9 +129,9 @@ export function enemyPortrait(mode: IdleMode, floor: number): string | undefined
 /**
  * 目標戰力對齊 balance.ts 里程碑：
  * - 主塔：前期可推進，中後期吃轉生／裝備階
- * - 副塔：一層 ≈ 主塔 ×100 層
+ * - 副塔：一層 ≈ 主塔 ×28 層（可早中期刷藍圖）
  * - 技能本：每層指數加難，掉同名技能本（非通用技能卡）
- * - 討伐訓練：一層 ≈ 主塔 ×16 層（刷破王徽；非 isBoss，不觸發克制王階）
+ * - 討伐訓練：一層 ≈ 主塔 ×11 層（刷破王徽；非 isBoss，不觸發克制王階）
  * - 王塔／神王：獨立指數軸
  */
 export function enemyTargetPower(mode: IdleMode, floor: number): number {
@@ -139,11 +139,11 @@ export function enemyTargetPower(mode: IdleMode, floor: number): number {
 
   if (mode === 'boss') return bossEnemyPower(f)
   if (mode === 'godking') return godkingEnemyPower(f)
-  if (mode === 'blueprint') return enemyTargetPower('main', f * 100)
+  if (mode === 'blueprint') return enemyTargetPower('main', Math.max(6, f * 28))
   // 技能本：陡峭指數（見 skillDungeonPowerSeed）
   if (mode === 'skill') return skillDungeonPowerSeed(f)
-  // 討伐訓練：略高於舊技能本倍率，首通王階後掛刷破王徽
-  if (mode === 'hunt') return enemyTargetPower('main', Math.max(12, f * 16))
+  // 討伐訓練：首通王階後掛刷破王徽（略低於舊 ×16 的窒息感）
+  if (mode === 'hunt') return enemyTargetPower('main', Math.max(10, f * 11))
   return mainEnemyPower(f)
 }
 

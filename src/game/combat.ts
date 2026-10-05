@@ -326,9 +326,12 @@ export function battleTick(state: GameState): {
 
   if (b.teamHp <= 0) {
     const floor = farmFloorOf(state)
-    // 戰敗懲罰收斂，避免卡關時把養成資源罰光導致死亡螺旋
-    const crystalLoss = Math.min(state.resources.crystal, Math.floor(10 + floor * 0.85))
-    const goldLoss = Math.min(state.resources.gold, Math.max(0, Math.floor(1 + floor / 35)))
+    // 戰敗懲罰：前期輕罰，避免水晶死亡螺旋；後期仍有感
+    const crystalLoss = Math.min(
+      state.resources.crystal,
+      Math.floor(2 + floor * 0.22 + Math.max(0, floor - 100) * 0.2),
+    )
+    const goldLoss = Math.min(state.resources.gold, Math.max(0, Math.floor(floor / 60)))
     state.resources.crystal -= crystalLoss
     state.resources.gold -= goldLoss
     const failGains: Partial<Resources> = {}
@@ -642,37 +645,38 @@ function resolveEnemyAction(
 
 export function clearRewards(state: GameState): Partial<Resources> {
   const floor = farmFloorOf(state)
-  // 提高主塔水晶與副塔藍圖基礎，讓早中期掛機有感
-  const mainCrystalBase = Math.floor(18 + floor * 2.55)
-  const mainMiniBonus = floor % 10 === 0 ? Math.floor(mainCrystalBase * 1.35) : 0
+  // 主塔水晶／微量精華：支撐升級＋技能升級平滑曲線
+  const mainCrystalBase = Math.floor(30 + floor * 3.35)
+  const mainMiniBonus = floor % 10 === 0 ? Math.floor(mainCrystalBase * 1.25) : 0
 
   if (state.idleMode === 'main') {
     return {
       crystal: mainCrystalBase + mainMiniBonus,
-      gold: Math.max(1, Math.floor(1 + floor / 20)),
-      blueprint: Math.max(0, Math.floor(1 + floor * 0.08)),
+      gold: Math.max(1, Math.floor(2 + floor / 16)),
+      blueprint: Math.max(0, Math.floor(1 + floor * 0.12)),
+      essence: Math.max(0, Math.floor(1 + floor * 0.08)),
     }
   }
   if (state.idleMode === 'blueprint') {
-    const mainEquivalent = mainCrystalBase + Math.floor(mainCrystalBase * 1.35)
+    const mainEquivalent = mainCrystalBase + Math.floor(mainCrystalBase * 1.2)
     return {
-      crystal: Math.max(1, Math.floor(mainEquivalent * 0.22)),
-      blueprint: Math.floor(10 + floor * 1.05),
-      forge: Math.max(0, Math.floor(floor * 0.08)),
+      crystal: Math.max(1, Math.floor(mainEquivalent * 0.28)),
+      blueprint: Math.floor(14 + floor * 1.35),
+      forge: Math.max(0, Math.floor(2 + floor * 0.14)),
     }
   }
   if (state.idleMode === 'skill') {
     // 同名技能本由 grantSkillDungeonBooks 發放；此處僅附帶資源
     return {
-      crystal: Math.max(1, Math.floor(mainCrystalBase * 0.28)),
-      essence: Math.max(0, Math.floor(2 + floor * 0.12)),
+      crystal: Math.max(1, Math.floor(mainCrystalBase * 0.32)),
+      essence: Math.max(1, Math.floor(4 + floor * 0.22)),
     }
   }
   if (state.idleMode === 'hunt') {
     const mini = floor % 5 === 0
     return {
-      kingBadge: Math.floor(3 + floor * 0.55) + (mini ? Math.floor(4 + floor * 0.35) : 0),
-      crystal: Math.max(1, Math.floor(mainCrystalBase * 0.18)),
+      kingBadge: Math.floor(3 + floor * 0.5) + (mini ? Math.floor(3 + floor * 0.3) : 0),
+      crystal: Math.max(1, Math.floor(mainCrystalBase * 0.22)),
     }
   }
   if (state.idleMode === 'boss') {

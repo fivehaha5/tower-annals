@@ -148,11 +148,11 @@ function runPath(profile: PathProfile): RunStats {
   hydrate(createNewState())
   chooseStarters()
   const s0 = getState()
-  s0.resources.crystal += 8000
-  s0.resources.gold += 800
-  s0.resources.blueprint += 80
-  s0.resources.essence += 400
-  s0.resources.skillbook += 200
+  s0.resources.crystal += 1200
+  s0.resources.gold += 200
+  s0.resources.blueprint += 40
+  s0.resources.essence += 80
+  s0.resources.skillbook += 40
   autoLevelRoster()
 
   const totalTicks = Math.floor(profile.hours * 3600)

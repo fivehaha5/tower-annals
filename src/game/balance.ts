@@ -20,14 +20,14 @@
  * - 技能種類 CD＝2（該角色出手次數）；三技能可輪替
  * - 超過 20 完整回合觸發敵方「暴走」，急升傷害並削盾／燒血，阻止無限磨血
  *
- * ## 戰力里程碑（約略可穩刷）
- * - 新手編隊：主塔 ~10
- * - 首轉前滿級＋少量進階：~40–60
- * - 轉生 2 + T1 裝：~120–180（對齊藍圖 T1）
+ * ## 戰力里程碑（新檔平滑曲線目標）
+ * - 開局～1h：主塔 ~15–25（可穩推、戰敗不螺旋）
+ * - 首日中段：解鎖技能本～18F，開始囤同名本
+ * - 首轉前滿級：~50–80
+ * - 轉生 1～2 + T1：~120–180
  * - 轉生 3 + T2：~250–350
- * - 轉生 5 + T3：~450–600
- * - 轉生 7 + T4：~700+
- * 王塔首隻約對齊轉生 2～3 戰力；神王需主塔萬層量級
+ * - 轉生 5+：中後期長線
+ * 王塔首隻約對齊轉生 2～3；神王需主塔萬層量級
  *
  * ## 王塔／神王輪迴掉落
  * 每輪難度約 ×100（王塔）／×130（神王），無定向掉率：
@@ -37,11 +37,17 @@
 /** 角色等級上限 */
 export const CHAR_LEVEL_MAX = 100
 
-/** 主塔敵方戰力：前期柔、中後期隨裝備／轉生節奏拉升 */
+/**
+ * 主塔敵方戰力：前期偏平可推，中後期隨轉生／裝備階拉升。
+ * （舊 58·f^1.33 讓新號約 20F 就大量戰敗＋暴走。）
+ */
 export function mainEnemyPower(floor: number): number {
   const f = Math.max(1, floor)
-  let p = 58 * Math.pow(f, 1.33) * (1 + f / 1200)
-  if (f % 10 === 0) p *= 1.18
+  let p = 34 * Math.pow(f, 1.16) * (1 + f / 2400)
+  if (f >= 35) p *= 1 + (f - 35) * 0.0042
+  if (f >= 100) p *= 1 + (f - 100) * 0.0055
+  if (f >= 250) p *= 1 + (f - 250) * 0.007
+  if (f % 10 === 0) p *= 1.1
   return Math.floor(p)
 }
 
@@ -114,76 +120,74 @@ export const UNIQUE_SKILL_BONUS = 1.18
 export const SKILL_KIND_COOLDOWN_TURNS = 2
 
 /** 單技能出手補償（舊版同 tick 可疊三招，改為一招後略抬倍率） */
-export const SINGLE_SKILL_FOCUS = 1.12
+export const SINGLE_SKILL_FOCUS = 1.2
 
 /** 技能皆在冷卻／未裝備時的普攻威力係數 */
-export const BASIC_ATTACK_POWER = 0.7
+export const BASIC_ATTACK_POWER = 0.75
 
 /**
  * 完整回合＝全員左→右各出手一次＋敵方一擊。
  * 超過此回合數觸發暴走，阻止弱勢無限磨死。
  */
-export const BERSERK_AFTER_ROUNDS = 20
+export const BERSERK_AFTER_ROUNDS = 26
 
-/** 暴走起始傷害倍率（第 20 回合） */
-export const BERSERK_DMG_MULT = 2.4
+/** 暴走起始傷害倍率 */
+export const BERSERK_DMG_MULT = 2.05
 
 /** 暴走每多一回合再疊加的傷害倍率 */
-export const BERSERK_DMG_GROW = 0.32
+export const BERSERK_DMG_GROW = 0.28
 
 /** 暴走每回合額外燒血（占最大生命比例，隨超回合遞增） */
-export const BERSERK_BURN_BASE = 0.025
-export const BERSERK_BURN_GROW = 0.01
+export const BERSERK_BURN_BASE = 0.02
+export const BERSERK_BURN_GROW = 0.008
 
-/** 敵方攻擊相對難度種子係數 */
-export const ENEMY_ATK_FROM_POWER = 0.078
+/** 敵方攻擊相對難度種子係數（略收，讓同戰力可在暴走前清層） */
+export const ENEMY_ATK_FROM_POWER = 0.054
 
 /**
  * 敵方生命相對難度種子。
  * 高種子再乘 soft scale，避免「戰力數字很高但血量不夠技能爆發」。
  */
-export const ENEMY_HP_FROM_POWER = 0.95
+export const ENEMY_HP_FROM_POWER = 0.78
 
 /** 敵方護盾相對難度種子（普通／小首領／Boss 再乘倍率） */
-export const ENEMY_SHIELD_FROM_POWER = 0.28
+export const ENEMY_SHIELD_FROM_POWER = 0.18
 
 /**
- * 敵方減傷錨點：舊版 `1+min(14, power×7e-5)` 在戰力≥20 萬就觸頂，
- * 導致 20 萬與 300 萬怪坦度幾乎一樣。改為無硬頂、對齊該錨點後繼續成長。
+ * 敵方減傷錨點：無硬頂；錨點略上移，前期減傷更溫和。
  */
-export const ENEMY_DEF_ANCHOR_POWER = 200_000
-export const ENEMY_DEF_ANCHOR_BONUS = 14
+export const ENEMY_DEF_ANCHOR_POWER = 280_000
+export const ENEMY_DEF_ANCHOR_BONUS = 12
 
-/** 隊伍戰力低於敵方時，超出部分的額外減傷指數（1.3M vs 3M → 明顯磨不動秒殺） */
-export const CP_UNDERDOG_MITIGATION_EXP = 1.05
+/** 隊伍戰力低於敵方時的額外減傷指數（略鬆，允許小幅落後仍可磨） */
+export const CP_UNDERDOG_MITIGATION_EXP = 0.82
 
 /** 技能對戰力貢獻係數（技能不進角色面板，但決定實際爆發） */
-export const SKILL_CP_WEIGHT = 0.9
+export const SKILL_CP_WEIGHT = 0.85
 
-/** 技能本解鎖所需主塔層數 */
-export const SKILL_DUNGEON_UNLOCK = 25
+/** 技能本解鎖所需主塔層數（略提前，銜接首日養成） */
+export const SKILL_DUNGEON_UNLOCK = 18
 
 /** 技能本通關後冷卻（秒） */
 export const SKILL_DUNGEON_COOLDOWN_SEC = 10
 
 /**
  * 技能本每層掉落同名技能本數量（隨機分給已持有技能）。
- * 一層一次；小首領略多。
  */
 export function skillDungeonBookDrops(floor: number): number {
   const f = Math.max(1, floor)
   const mini = f % 5 === 0
-  return 3 + Math.floor(f * 0.35) + (mini ? 2 : 0)
+  return 4 + Math.floor(f * 0.45) + (mini ? 3 : 0)
 }
 
 /**
- * 技能本敵方難度種子：相對主塔指數成長（舊版 ≈ 主塔×14 層過平）。
- * 第 1 層約主塔 25；之後每層 ×1.72。
+ * 技能本敵方難度：可刷低層，其後仍明顯變難。
+ * 第 1 層約主塔 12；之後每層 ×1.45。
  */
 export function skillDungeonPowerSeed(floor: number): number {
   const f = Math.max(1, floor)
-  const base = mainEnemyPower(25)
-  return Math.floor(base * Math.pow(1.72, f - 1))
+  const base = mainEnemyPower(12)
+  return Math.floor(base * Math.pow(1.38, f - 1))
 }
 
 /**
@@ -204,24 +208,24 @@ export const BOSS_FAIL_KING_BADGE_CHANCE = 0.2
  * 已持有則走精華升級／技能卡升階，不重複兌換。
  */
 export const ANTI_KING_EXCHANGE_COST = {
-  kingBadge: 40,
-  skillbook: 200,
-  crystal: 600,
+  kingBadge: 28,
+  skillbook: 120,
+  crystal: 400,
 } as const
 
-/** 新存檔／遷移贈送的技能卡緩衝 */
-export const SKILL_CARD_STARTER_CUSHION = 600
+/** 新存檔／遷移贈送的技能卡緩衝（定向／兌換用；升階改吃同名本） */
+export const SKILL_CARD_STARTER_CUSHION = 180
 
 /**
  * 技能強化等級加成（相對 Lv.1）。
- * 每升一級的增量隨等級提高：前期弱於舊版線性 0.11/級，後期才追上。
- * 第 i→i+1 級增量 ≈ 0.028 + 0.01*(i-1)
+ * 前期略抬、後期仍遞增但比舊爆炸曲線溫和。
+ * 第 i→i+1 級增量 ≈ 0.032 + 0.007*(i-1)
  */
 export function skillLevelPowerBonus(level: number): number {
   const lv = Math.max(1, Math.floor(level))
   let bonus = 0
   for (let i = 1; i < lv; i++) {
-    bonus += 0.028 + 0.01 * (i - 1)
+    bonus += 0.032 + 0.007 * (i - 1)
   }
   return bonus
 }

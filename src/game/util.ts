@@ -174,10 +174,10 @@ export function nextRarity(r: Rarity): Rarity | null {
   return i < RARITY_ORDER.length - 1 ? RARITY_ORDER[i + 1] : null
 }
 
-/** 角色升級：異界水晶（中後期變陡，讓轉生前有壓力） */
+/** 角色升級：異界水晶（前期更便宜，中後期仍變陡） */
 export function charLevelCost(level: number): number {
   const lv = Math.max(1, level)
-  return Math.floor(18 + lv * 9 + lv * lv * 0.08)
+  return Math.floor(11 + lv * 6.2 + lv * lv * 0.055)
 }
 
 /** 連續升級總消耗 */
@@ -191,7 +191,7 @@ export function charLevelCostRange(fromLevel: number, times: number): number {
 /** 角色進階：神魂（隨進階次數遞增） */
 export function charAscendCost(ascend: number): number {
   const a = Math.max(0, Math.floor(ascend))
-  return Math.floor(8 + a * 7 + a * a * 1.4)
+  return Math.floor(6 + a * 6 + a * a * 1.2)
 }
 
 /** 角色增效：多餘同名卡（第 n 次增效耗 n 張） */
@@ -199,12 +199,12 @@ export function charBoostCardCost(boost: number): number {
   return Math.max(1, Math.floor(boost) + 1)
 }
 
-/** 轉生：異界水晶 + 金鑽（抬高門檻，避免轉生戰力過度碾壓） */
+/** 轉生：異界水晶 + 金鑽（首轉可及，其後仍陡） */
 export function charRebirthCost(rebirth: number): { crystal: number; gold: number } {
   const r = Math.max(0, rebirth)
   return {
-    crystal: 12000 + r * 9000 + r * r * 1600,
-    gold: 2200 + r * 1400 + r * r * 280,
+    crystal: 5200 + r * 7200 + r * r * 1400,
+    gold: 800 + r * 1100 + r * r * 240,
   }
 }
 
@@ -279,20 +279,19 @@ export function nextBlueprintUnlockFloor(floor: number): number {
   return nextPrimeAfter(progress) * 100
 }
 
-/** 技能升級：法術精華（由 level → level+1，隨等級遞增） */
+/** 技能升級：法術精華（由 level → level+1，前期更便宜） */
 export function skillUpgradeCost(level: number): number {
   const lv = Math.max(1, Math.floor(level))
-  return Math.floor(6 + lv * 4 + lv * lv * 0.18)
+  return Math.floor(4 + lv * 3.2 + lv * lv * 0.14)
 }
 
 /**
  * 技能升階：同名技能本。
- * 由目前稀有度 → 下一階，耗 nthPrime(rank)×8；rank＝稀有度序（普通=1…）。
- * （改為同名本後數量變稀，倍率低於舊通用卡 ×100。）
+ * 由目前稀有度 → 下一階，耗 nthPrime(rank)×5；rank＝稀有度序（普通=1…）。
  */
 export function skillAscendCost(rarity: Rarity): number {
   const rank = Math.max(1, rarityIndex(rarity) + 1)
-  return nthPrime(rank) * 8
+  return nthPrime(rank) * 5
 }
 
 /** @deprecated 改用 skillAscendCost；保留別名避免外部殘留引用 */

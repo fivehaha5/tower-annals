@@ -209,8 +209,8 @@ export function createNewState(): GameState {
     tab: 'tower',
     resources: {
       ...emptyResources(),
-      crystal: 200,
-      gold: 30,
+      crystal: 450,
+      gold: 60,
       skillbook: SKILL_CARD_STARTER_CUSHION,
     },
     roster: [],
