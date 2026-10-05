@@ -43,8 +43,12 @@ import {
   BOSS_CLEAR_KING_BADGE,
   BOSS_CLEAR_KING_BADGE_BONUS,
   BOSS_FAIL_KING_BADGE_CHANCE,
+  CP_UNDERDOG_MITIGATION_EXP,
+  ENEMY_DEF_ANCHOR_BONUS,
+  ENEMY_DEF_ANCHOR_POWER,
   EQUIP_LEVEL_SCALE,
   SINGLE_SKILL_FOCUS,
+  SKILL_CP_WEIGHT,
   SKILL_KIND_COOLDOWN_TURNS,
   UNIQUE_SKILL_BONUS,
   boostWorkBonus,
@@ -161,21 +165,65 @@ export function calcCharStats(state: GameState, ch: OwnedCharacter): Stats {
   return scaleStats(s, dexBonus)
 }
 
-export function teamPower(state: GameState): number {
-  return getTeam(state).reduce((sum, ch) => {
-    const s = calcCharStats(state, ch)
-    return sum + Math.floor(s.hp * 0.3 + s.shield * 0.25 + s.atk * 8 + s.def * 4)
-  }, 0)
-}
-
-export function teamTotals(state: GameState): Stats {
-  return getTeam(state).reduce((acc, ch) => addStats(acc, calcCharStats(state, ch)), emptyStats())
-}
-
 function skillStrength(sk: OwnedSkill | undefined): number {
   if (!sk) return 0.35
   const uniqueBonus = SKILL_MAP[sk.skillId]?.unique ? UNIQUE_SKILL_BONUS : 1
   return (1 + skillLevelPowerBonus(sk.level)) * rarityMult(sk.rarity) * uniqueBonus
+}
+
+/** 與敵方顯示戰力共用：血／盾／攻／防加權 */
+export function combatPowerFromStats(s: Stats): number {
+  return Math.floor(s.hp * 0.3 + s.shield * 0.25 + s.atk * 8 + s.def * 4)
+}
+
+/** 出戰技能爆發倍率估價（含等級／稀有度／單技能補償） */
+export function roleSkillBurstScore(state: GameState, role: Role): number {
+  const castOrder = state.skillCastOrder?.length
+    ? state.skillCastOrder
+    : defaultSkillCastOrder()
+  let best = BASIC_ATTACK_POWER
+  for (const kind of castOrder) {
+    const owned = getEquippedSkill(state, role, kind)
+    if (!owned) continue
+    const skill = SKILL_MAP[owned.skillId]
+    if (!skill) continue
+    const str = skillStrength(owned) * SINGLE_SKILL_FOCUS
+    const kindFactor = kind === 'attack' ? 1 : kind === 'support' ? 0.65 : 0.55
+    const score = Math.max(skill.power, 0.35) * str * kindFactor
+    if (score > best) best = score
+  }
+  return best
+}
+
+/**
+ * 隊伍戰力：角色面板 + 出戰技能爆發。
+ * 舊版不算技能，會出現「戰力 1.3M 卻秒殺 3M」的錯覺。
+ */
+export function teamPower(state: GameState): number {
+  return getTeam(state).reduce((sum, ch) => {
+    const def = CHAR_MAP[ch.defId]
+    if (!def) return sum
+    const s = calcCharStats(state, ch)
+    const base = combatPowerFromStats(s)
+    const burst = roleSkillBurstScore(state, def.role)
+    // 普攻基準 ≈0.7；高出的部分視為技能對有效輸出／戰力的貢獻
+    const skillCp = Math.floor(s.atk * 8 * Math.max(0, burst - BASIC_ATTACK_POWER) * SKILL_CP_WEIGHT)
+    return sum + base + skillCp
+  }, 0)
+}
+
+/** 敵方減傷：無硬頂，20 萬錨點約 ×15，其後隨戰力續增 */
+export function enemyDefenseFactor(enemyPower: number, mechanic?: BattleSnapshot['enemy']['mechanic']): number {
+  const p = Math.max(1, enemyPower)
+  const scale = Math.pow(p / ENEMY_DEF_ANCHOR_POWER, 0.62)
+  let factor = 1 + ENEMY_DEF_ANCHOR_BONUS * scale
+  if (mechanic === 'stoneSkin') factor *= 1.15
+  if (mechanic === 'mountainSpine') factor *= 1.25
+  return factor
+}
+
+export function teamTotals(state: GameState): Stats {
+  return getTeam(state).reduce((acc, ch) => addStats(acc, calcCharStats(state, ch)), emptyStats())
 }
 
 export function farmFloorOf(state: GameState): number {
@@ -458,11 +506,15 @@ function resolvePartyAction(
     trueDealt *= m
   }
 
-  let enemyDefFactor = 1 + Math.min(14, b.enemy.power * 0.00007)
-  if (b.enemy.mechanic === 'stoneSkin') enemyDefFactor *= 1.15
-  if (b.enemy.mechanic === 'mountainSpine') enemyDefFactor *= 1.25
+  let enemyDefFactor = enemyDefenseFactor(b.enemy.power, b.enemy.mechanic)
 
   let dmgToEnemy = Math.floor(dealt / enemyDefFactor) + Math.floor(trueDealt)
+  // 真實傷害仍吃戰力差距軟閘，避免純真傷無視高戰力怪
+  const tp = Math.max(1, teamPower(state))
+  const cpRatio = b.enemy.power / tp
+  if (cpRatio > 1.1) {
+    dmgToEnemy = Math.floor(dmgToEnemy / Math.pow(cpRatio / 1.1, CP_UNDERDOG_MITIGATION_EXP))
+  }
   if (b.enemy.mechanic === 'gateBlock' && (b.enemy.gateCharges ?? 0) > 0) {
     b.enemy.gateCharges! -= 1
     dmgToEnemy = 0

@@ -134,14 +134,30 @@ export const BERSERK_DMG_GROW = 0.32
 export const BERSERK_BURN_BASE = 0.025
 export const BERSERK_BURN_GROW = 0.01
 
-/** 敵方攻擊相對戰力係數（舊 0.055 過低；對齊戰力顯示且讓近戰力磨可能撐過 20 回合） */
+/** 敵方攻擊相對難度種子係數 */
 export const ENEMY_ATK_FROM_POWER = 0.078
 
-/** 敵方生命相對戰力 */
-export const ENEMY_HP_FROM_POWER = 0.88
+/**
+ * 敵方生命相對難度種子。
+ * 高種子再乘 soft scale，避免「戰力數字很高但血量不夠技能爆發」。
+ */
+export const ENEMY_HP_FROM_POWER = 0.95
 
-/** 敵方護盾相對戰力（普通／小首領／Boss 再乘倍率） */
-export const ENEMY_SHIELD_FROM_POWER = 0.24
+/** 敵方護盾相對難度種子（普通／小首領／Boss 再乘倍率） */
+export const ENEMY_SHIELD_FROM_POWER = 0.28
+
+/**
+ * 敵方減傷錨點：舊版 `1+min(14, power×7e-5)` 在戰力≥20 萬就觸頂，
+ * 導致 20 萬與 300 萬怪坦度幾乎一樣。改為無硬頂、對齊該錨點後繼續成長。
+ */
+export const ENEMY_DEF_ANCHOR_POWER = 200_000
+export const ENEMY_DEF_ANCHOR_BONUS = 14
+
+/** 隊伍戰力低於敵方時，超出部分的額外減傷指數（1.3M vs 3M → 明顯磨不動秒殺） */
+export const CP_UNDERDOG_MITIGATION_EXP = 1.05
+
+/** 技能對戰力貢獻係數（技能不進角色面板，但決定實際爆發） */
+export const SKILL_CP_WEIGHT = 0.9
 
 /** 技能本解鎖所需主塔層數 */
 export const SKILL_DUNGEON_UNLOCK = 25
