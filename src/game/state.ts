@@ -19,6 +19,9 @@ import {
   calcCharStats,
   createBattle,
   fightingUids,
+  findRoleWearingEquip,
+  findRoleWearingSkill,
+  getCharEnhanceLevel,
   getOwned,
   getRoleCharacter,
   getSkillItem,
@@ -275,6 +278,9 @@ export function normalizeState(s: GameState): GameState {
     s.loadouts[role] ??= emptyLoadout()
     s.loadouts[role].equips ??= {}
     s.loadouts[role].skills ??= {}
+    s.loadouts[role].equipLevels ??= {}
+    s.loadouts[role].skillLevels ??= {}
+    s.loadouts[role].charLevel ??= 1
   }
   s.formation ??= defaultFormation()
   if (s.formation.length !== 3) s.formation = defaultFormation()
@@ -480,6 +486,37 @@ export function normalizeState(s: GameState): GameState {
     // 舊通用遺物 → 職業特化；錯職／未知則清空
     const migrated = migrateLegacyRelicId(s.loadouts[role].relicId, role)
     s.loadouts[role].relicId = migrated
+  }
+
+  // v7：強化等級遷至出戰格（僅遷移一次）
+  if (!(s as GameState & { loadoutEnhanceMigrated?: boolean }).loadoutEnhanceMigrated) {
+    for (const role of ROLES) {
+      const lo = s.loadouts[role]
+      lo.equipLevels ??= {}
+      lo.skillLevels ??= {}
+      const ch = s.roster.find((c) => c.uid === lo.characterUid)
+      if (ch) lo.charLevel = Math.max(1, ch.level ?? 1)
+      else lo.charLevel = Math.max(1, lo.charLevel ?? 1)
+      for (const slot of EQUIP_SLOTS) {
+        const uidEq = lo.equips[slot]
+        if (!uidEq) {
+          lo.equipLevels[slot] = Math.max(0, lo.equipLevels[slot] ?? 0)
+          continue
+        }
+        const eq = s.equips.find((e) => e.uid === uidEq)
+        lo.equipLevels[slot] = Math.max(0, lo.equipLevels[slot] ?? eq?.level ?? 0)
+      }
+      for (const kind of KINDS) {
+        const uidSk = lo.skills[kind]
+        if (!uidSk) {
+          lo.skillLevels[kind] = Math.max(1, lo.skillLevels[kind] ?? 1)
+          continue
+        }
+        const sk = s.skillItems.find((i) => i.uid === uidSk)
+        lo.skillLevels[kind] = Math.max(1, lo.skillLevels[kind] ?? sk?.level ?? 1)
+      }
+    }
+    ;(s as GameState & { loadoutEnhanceMigrated?: boolean }).loadoutEnhanceMigrated = true
   }
 
   // 遺物庫：遷移舊 id、清未知，再依各職轉生解鎖
@@ -813,23 +850,47 @@ export function dismissOffline() {
   emit()
 }
 
+/** 出戰中：升級綁職業格 charLevel；未出戰：升角色本體（打工用） */
+function charLevelTarget(ch: OwnedCharacter): { kind: 'loadout'; role: Role } | { kind: 'body' } {
+  const role = CHAR_MAP[ch.defId]?.role
+  if (role && state.loadouts[role]?.characterUid === ch.uid) return { kind: 'loadout', role }
+  return { kind: 'body' }
+}
+
+function readCharLevel(ch: OwnedCharacter): number {
+  return getCharEnhanceLevel(state, ch)
+}
+
+function writeCharLevel(ch: OwnedCharacter, level: number) {
+  const target = charLevelTarget(ch)
+  const lv = Math.max(1, Math.min(CHAR_LEVEL_MAX, level))
+  if (target.kind === 'loadout') {
+    state.loadouts[target.role].charLevel = lv
+    ch.level = lv // 同步本體，供打工／列表顯示
+  } else {
+    ch.level = lv
+  }
+}
+
 export function levelUp(uidStr: string, times = 1): string | null {
   const ch = getOwned(state, uidStr)
   if (!ch) return '找不到角色'
   const want = Math.max(1, Math.floor(times))
   let gained = 0
   for (let i = 0; i < want; i++) {
-    if (ch.level >= CHAR_LEVEL_MAX) break
-    const cost = charLevelCost(ch.level)
+    const cur = readCharLevel(ch)
+    if (cur >= CHAR_LEVEL_MAX) break
+    const cost = charLevelCost(cur)
     if (state.resources.crystal < cost) {
       if (gained === 0) return '異界水晶不足'
       break
     }
     state.resources.crystal -= cost
-    ch.level += 1
+    writeCharLevel(ch, cur + 1)
     gained += 1
   }
-  if (gained === 0) return ch.level >= CHAR_LEVEL_MAX ? '已達等級上限，可轉生' : '無法升級'
+  if (gained === 0) return readCharLevel(ch) >= CHAR_LEVEL_MAX ? '已達等級上限，可轉生' : '無法升級'
+  state.battle = createBattle(state)
   emit()
   return null
 }
@@ -837,15 +898,17 @@ export function levelUp(uidStr: string, times = 1): string | null {
 export function levelUpMax(uidStr: string): string | null {
   const ch = getOwned(state, uidStr)
   if (!ch) return '找不到角色'
-  if (ch.level >= CHAR_LEVEL_MAX) return '已達等級上限，可轉生'
-  const before = ch.level
-  while (ch.level < CHAR_LEVEL_MAX) {
-    const cost = charLevelCost(ch.level)
+  if (readCharLevel(ch) >= CHAR_LEVEL_MAX) return '已達等級上限，可轉生'
+  const before = readCharLevel(ch)
+  while (readCharLevel(ch) < CHAR_LEVEL_MAX) {
+    const cur = readCharLevel(ch)
+    const cost = charLevelCost(cur)
     if (state.resources.crystal < cost) break
     state.resources.crystal -= cost
-    ch.level += 1
+    writeCharLevel(ch, cur + 1)
   }
-  if (ch.level === before) return '異界水晶不足'
+  if (readCharLevel(ch) === before) return '異界水晶不足'
+  state.battle = createBattle(state)
   emit()
   return null
 }
@@ -853,14 +916,14 @@ export function levelUpMax(uidStr: string): string | null {
 export function rebirthCharacter(uidStr: string): string | null {
   const ch = getOwned(state, uidStr)
   if (!ch) return '找不到角色'
-  if (ch.level < CHAR_LEVEL_MAX) return `需達到 Lv.${CHAR_LEVEL_MAX}`
+  if (readCharLevel(ch) < CHAR_LEVEL_MAX) return `需達到 Lv.${CHAR_LEVEL_MAX}`
   const cost = charRebirthCost(ch.rebirth ?? 0)
   if (state.resources.crystal < cost.crystal) return '異界水晶不足'
   if (state.resources.gold < cost.gold) return '金鑽不足'
   state.resources.crystal -= cost.crystal
   state.resources.gold -= cost.gold
   ch.rebirth = (ch.rebirth ?? 0) + 1
-  ch.level = 1
+  writeCharLevel(ch, 1)
   const role = CHAR_MAP[ch.defId]?.role
   for (const r of relicsUnlockedByRebirth(ch.rebirth, role)) {
     if (!state.relicInventory.includes(r.id)) state.relicInventory.push(r.id)
@@ -895,10 +958,17 @@ export function boostCharacter(uidStr: string): string | null {
 export function upgradeSkill(skillUid: string): string | null {
   const sk = getSkillItem(state, skillUid)
   if (!sk) return '找不到技能'
-  const cost = skillUpgradeCost(sk.level)
+  const worn = findRoleWearingSkill(state, skillUid)
+  if (!worn) return '請先裝上技能再強化（強化綁在出戰格）'
+  const lo = state.loadouts[worn.role]
+  lo.skillLevels ??= {}
+  const cur = Math.max(1, lo.skillLevels[worn.kind] ?? 1)
+  const cost = skillUpgradeCost(cur)
   if (state.resources.essence < cost) return '法術精華不足'
   state.resources.essence -= cost
-  sk.level += 1
+  lo.skillLevels[worn.kind] = cur + 1
+  sk.level = lo.skillLevels[worn.kind]! // 同步舊欄位，避免介面讀到過期值
+  state.battle = createBattle(state)
   emit()
   return null
 }
@@ -966,6 +1036,8 @@ export function equipSkillOnRole(role: Role, skillUid: string): string | null {
     }
   }
   state.loadouts[role].skills[def.kind] = skillUid
+  state.loadouts[role].skillLevels ??= {}
+  state.loadouts[role].skillLevels[def.kind] ??= 1
   state.battle = createBattle(state)
   emit()
   return null
@@ -973,6 +1045,7 @@ export function equipSkillOnRole(role: Role, skillUid: string): string | null {
 
 export function unequipSkillOnRole(role: Role, kind: SkillKind): string | null {
   state.loadouts[role].skills[kind] = undefined
+  // 強化等級留在格上，換下一本同槽技能仍沿用
   state.battle = createBattle(state)
   emit()
   return null
@@ -994,13 +1067,20 @@ export function unequipSkill(charUid: string, kind: SkillKind): string | null {
 export function upgradeEquip(equipUid: string): string | null {
   const eq = state.equips.find((e) => e.uid === equipUid)
   if (!eq) return '找不到裝備'
-  const cost = equipUpgradeCost(eq.level)
+  const worn = findRoleWearingEquip(state, equipUid)
+  if (!worn) return '請先裝上裝備再強化（強化綁在出戰格）'
+  const lo = state.loadouts[worn.role]
+  lo.equipLevels ??= {}
+  const cur = Math.max(0, lo.equipLevels[worn.slot] ?? 0)
+  const cost = equipUpgradeCost(cur)
   if (state.resources.forge < cost.forge || state.resources.gold < cost.gold) {
     return '熔鍛或金鑽不足'
   }
   state.resources.forge -= cost.forge
   state.resources.gold -= cost.gold
-  eq.level += 1
+  lo.equipLevels[worn.slot] = cur + 1
+  eq.level = lo.equipLevels[worn.slot]! // 同步舊欄位
+  state.battle = createBattle(state)
   emit()
   return null
 }
@@ -1023,7 +1103,7 @@ export function craftEquip(role: Role, slot: EquipSlot, tier: number): string | 
   state.equips.push({
     uid: uid('eq'),
     defId: def.id,
-    level: 1,
+    level: 0, // 強化綁出戰格；本體僅品質
     rarity,
   } satisfies OwnedEquip)
   state.pendingToast = `打造完成：${def.name} · ${rarity}`
@@ -1060,6 +1140,8 @@ export function equipOnRole(role: Role, equipUid: string): string | null {
     }
   }
   state.loadouts[role].equips[parsed.slot] = equipUid
+  state.loadouts[role].equipLevels ??= {}
+  state.loadouts[role].equipLevels[parsed.slot] ??= 0
   state.battle = createBattle(state)
   emit()
   return null
@@ -1070,6 +1152,7 @@ export function unequipOnRole(role: Role, slot: EquipSlot): string | null {
   if (!EQUIP_SLOTS.includes(slot)) return '無效部位'
   if (!state.loadouts[role].equips[slot]) return '該部位未穿裝'
   state.loadouts[role].equips[slot] = undefined
+  // 強化等級留在部位格上
   state.battle = createBattle(state)
   emit()
   return null
@@ -1122,6 +1205,7 @@ export function deployCharacter(charUid: string) {
   if (isOnDispatch(ch)) return
   const role = CHAR_MAP[ch.defId].role
   state.loadouts[role].characterUid = ch.uid
+  state.loadouts[role].charLevel ??= 1 // 換人保留格上等級，不覆蓋
   ch.workJob = undefined
   state.battle = createBattle(state)
   emit()

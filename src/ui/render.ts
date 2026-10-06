@@ -19,8 +19,11 @@ import {
   createBattle,
   farmFloorOf,
   fightingUids,
+  getCharEnhanceLevel,
+  getEquipEnhanceLevel,
   getEquippedSkill,
   getRoleCharacter,
+  getSkillEnhanceLevel,
   getTeamRoles,
   teamPower,
   workBoostMult,
@@ -595,7 +598,7 @@ function towerView(state: GameState): string {
                 const tip = sd ? skillEffectLine(sd) : ''
                 const fx = sd ? skillPowerLine(sd) : ''
                 const special = sd ? skillSpecialLine(sd) : ''
-                return `<div class="skill skill-with-fx${onCd ? ' on-cd' : ''}" data-skill-cd data-role="${role}" data-kind="${kind}" style="border-color:${RARITY_COLOR[s?.rarity ?? '普通']}" title="${escapeHtml(tip)}"><div class="skill-name">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '—'}${s ? ` Lv.${s.level}` : ''}<span class="cd-badge" data-cd-badge>${onCd ? `CD${cd}` : ''}</span></div>${fx ? `<div class="skill-fx">${escapeHtml(fx)}${special ? ` · ${escapeHtml(special)}` : ''}</div>` : ''}</div>`
+                return `<div class="skill skill-with-fx${onCd ? ' on-cd' : ''}" data-skill-cd data-role="${role}" data-kind="${kind}" style="border-color:${RARITY_COLOR[s?.rarity ?? '普通']}" title="${escapeHtml(tip)}"><div class="skill-name">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '—'}${s ? ` Lv.${getSkillEnhanceLevel(state, role, kind)}` : ''}<span class="cd-badge" data-cd-badge>${onCd ? `CD${cd}` : ''}</span></div>${fx ? `<div class="skill-fx">${escapeHtml(fx)}${special ? ` · ${escapeHtml(special)}` : ''}</div>` : ''}</div>`
               }).join('')}</div>
             </div>`
           })
@@ -698,14 +701,17 @@ function loungeFilter(): LoungeFilter {
   return (window as unknown as { __loungeFilter?: LoungeFilter }).__loungeFilter ?? 'all'
 }
 
-function levelButtons(ch: OwnedCharacter): string {
-  const atCap = ch.level >= CHAR_LEVEL_MAX
-  const room = Math.max(0, CHAR_LEVEL_MAX - ch.level)
+function levelButtons(state: GameState, ch: OwnedCharacter): string {
+  const lv = getCharEnhanceLevel(state, ch)
+  const deployed = fightingUids(state).has(ch.uid)
+  const atCap = lv >= CHAR_LEVEL_MAX
+  const room = Math.max(0, CHAR_LEVEL_MAX - lv)
   const n10 = Math.min(10, room)
-  const cost1 = charLevelCost(ch.level)
-  const cost10 = charLevelCostRange(ch.level, n10)
+  const cost1 = charLevelCost(lv)
+  const cost10 = charLevelCostRange(lv, n10)
   const rebirth = ch.rebirth ?? 0
   const rbCost = charRebirthCost(rebirth)
+  const bindHint = deployed ? '強化綁出戰格（換人保留）' : '未出戰：升本體等級（打工用）'
   if (atCap) {
     const curTier = maxEquipTierForRebirth(rebirth)
     const after = rebirth + 1
@@ -719,14 +725,15 @@ function levelButtons(ch: OwnedCharacter): string {
         <button class="btn" disabled>已滿級 Lv.${CHAR_LEVEL_MAX}</button>
         <button class="btn primary" data-act="rebirth" data-id="${ch.uid}">轉生(${formatNum(rbCost.crystal)}水晶+${formatNum(rbCost.gold)}金鑽)</button>
       </div>
-      <div class="muted" style="margin-top:4px">轉生後回 Lv.1，轉生次數+1。裝備階僅在轉生次數為質數時提升 · ${unlockHint}</div>`
+      <div class="muted" style="margin-top:4px">轉生後回 Lv.1，轉生次數+1。裝備階僅在轉生次數為質數時提升 · ${unlockHint} · ${bindHint}</div>`
   }
   return `
     <div class="btn-row" style="margin-top:8px">
       <button class="btn" data-act="level" data-id="${ch.uid}" data-times="1">+1(${formatNum(cost1)}水晶)</button>
       <button class="btn" data-act="level" data-id="${ch.uid}" data-times="10" ${n10 < 1 ? 'disabled' : ''}>+${n10 || 10}(${formatNum(cost10)}水晶)</button>
       <button class="btn primary" data-act="levelmax" data-id="${ch.uid}">升滿</button>
-    </div>`
+    </div>
+    <div class="muted" style="margin-top:4px">${bindHint}</div>`
 }
 
 function charCard(state: GameState, ch: OwnedCharacter, opts?: { showDeploy?: boolean }): string {
@@ -734,6 +741,7 @@ function charCard(state: GameState, ch: OwnedCharacter, opts?: { showDeploy?: bo
   if (!def) return ''
   const stats = calcCharStats(state, ch)
   const deployed = fightingUids(state).has(ch.uid)
+  const lv = getCharEnhanceLevel(state, ch)
   const stack = Math.max(1, ch.count ?? 1)
   const ascendCost = charAscendCost(ch.ascend)
   const boostCost = charBoostCardCost(ch.boost ?? 0)
@@ -743,10 +751,10 @@ function charCard(state: GameState, ch: OwnedCharacter, opts?: { showDeploy?: bo
   return `<div class="card stack-card" data-char="${ch.uid}">
     <img src="${def.portrait}" alt="${def.name}" />
     <div class="body">
-      <div class="title">${nameSpan(def.name, ch.rarity)} · ${raritySpan(ch.rarity)} · Lv.${ch.level}/${CHAR_LEVEL_MAX}</div>
+      <div class="title">${nameSpan(def.name, ch.rarity)} · ${raritySpan(ch.rarity)} · Lv.${lv}/${CHAR_LEVEL_MAX}${deployed ? ' · 格' : ''}</div>
       <div class="sub">${ROLE_LABEL[def.role]} · ${def.element} · 進階${ch.ascend} · 轉生${rebirth}（裝T${maxTier}）· 攻${formatNum(stats.atk)} 血${formatNum(stats.hp)} 防${formatNum(stats.def)} 盾${formatNum(stats.shield)}</div>
       <div class="sub">增效${ch.boost}（打工${workBoostMult(ch).toFixed(2)}x）· ${deployed ? '出戰' : ch.workJob ? WORK_LABEL[ch.workJob] : '閒置'}</div>
-      ${levelButtons(ch)}
+      ${levelButtons(state, ch)}
       <div class="btn-row" style="margin-top:8px">
         <button class="btn" data-act="ascend" data-id="${ch.uid}">進階(${formatNum(ascendCost)}神魂)</button>
         <button class="btn" data-act="boost" data-id="${ch.uid}" ${stack < boostCost + 1 ? 'disabled' : ''}>增效(耗${boostCost}張)</button>
@@ -769,11 +777,12 @@ function roleSkillBlock(state: GameState, role: Role): string {
 
   const slots = KINDS.map((kind) => {
     const s = getEquippedSkill(state, role, kind)
+    const enhance = getSkillEnhanceLevel(state, role, kind)
     if (!s) {
-      return `<div style="margin-top:8px"><div class="muted">${SKILL_KIND_LABEL[kind]} · 未裝備</div></div>`
+      return `<div style="margin-top:8px"><div class="muted">${SKILL_KIND_LABEL[kind]} · 未裝備 · 格Lv.${enhance}</div></div>`
     }
     const sd = SKILL_MAP[s.skillId]
-    const upCost = skillUpgradeCost(s.level)
+    const upCost = skillUpgradeCost(enhance)
     const canAsc = !!nextRarity(s.rarity)
     const ascCost = skillAscendCost(s.rarity)
     const books = s.books ?? 0
@@ -781,10 +790,10 @@ function roleSkillBlock(state: GameState, role: Role): string {
     const canPayAsc = books >= ascCost
     const tip = sd ? skillEffectLine(sd) : ''
     return `<div style="margin-top:8px">
-      <div class="muted">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '?'} ${raritySpan(s.rarity)} Lv.${s.level} · 技能本×${formatNum(books)}${sd?.source === 'antiKing' ? ' · 克制王階' : ''}</div>
+      <div class="muted">${SKILL_KIND_LABEL[kind]} ${sd?.unique ? '★' : ''}${sd?.name ?? '?'} ${raritySpan(s.rarity)} 格Lv.${enhance} · 技能本×${formatNum(books)}${sd?.source === 'antiKing' ? ' · 克制王階' : ''}</div>
       ${sd ? `<div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(sd))}${skillSpecialLine(sd) ? ` · ${escapeHtml(skillSpecialLine(sd))}` : ''}</div><div class="muted" style="font-size:11px">${escapeHtml(sd.desc)}</div>` : ''}
       <div class="btn-row" style="margin-top:4px">
-        <button class="btn" data-act="skillup" data-id="${s.uid}" ${canPayEssence ? '' : 'disabled'}>升級(${formatNum(upCost)}精華)</button>
+        <button class="btn" data-act="skillup" data-id="${s.uid}" ${canPayEssence ? '' : 'disabled'}>升級格(${formatNum(upCost)}精華)</button>
         ${
           canAsc
             ? `<button class="btn" data-act="skillasc" data-id="${s.uid}" ${canPayAsc ? '' : 'disabled'}>升階(${formatNum(ascCost)}同名本)</button>`
@@ -802,19 +811,16 @@ function roleSkillBlock(state: GameState, role: Role): string {
       .map(({ rep: sk, count }) => {
         const sd = SKILL_MAP[sk.skillId]!
         const tip = skillEffectLine(sd)
-        const bagUpCost = skillUpgradeCost(sk.level)
-        const bagCanUp = state.resources.essence >= bagUpCost
         const bagAsc = nextRarity(sk.rarity)
         const bagAscCost = skillAscendCost(sk.rarity)
         const bagBooks = sk.books ?? 0
         const bagCanAsc = !!bagAsc && bagBooks >= bagAscCost
         return `<div class="row-item">
-          <div class="row-main">${sd.unique ? '★' : ''}${sd.name} · ${raritySpan(sk.rarity)} Lv.${sk.level} · 技能本×${formatNum(bagBooks)}${count > 1 ? ` · x${count}` : ''}${sd.source === 'antiKing' ? ' · 克制王階' : ''}</div>
-          <div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(sd))}${skillSpecialLine(sd) ? ` · ${escapeHtml(skillSpecialLine(sd))}` : ''}</div>
+          <div class="row-main">${sd.unique ? '★' : ''}${sd.name} · ${raritySpan(sk.rarity)} · 技能本×${formatNum(bagBooks)}${count > 1 ? ` · x${count}` : ''}${sd.source === 'antiKing' ? ' · 克制王階' : ''}</div>
+          <div class="sub" title="${escapeHtml(tip)}">${escapeHtml(skillPowerLine(sd))}${skillSpecialLine(sd) ? ` · ${escapeHtml(skillSpecialLine(sd))}` : ''} · 強化請先裝上</div>
           <div class="muted" style="font-size:11px">${escapeHtml(sd.desc)}</div>
           <div class="btn-row">
             <button class="btn primary" data-act="skillequip-role" data-role="${role}" data-skill="${sk.uid}">裝上</button>
-            <button class="btn" data-act="skillup" data-id="${sk.uid}" ${bagCanUp ? '' : 'disabled'}>升級(${formatNum(bagUpCost)}精華)</button>
             ${
               bagAsc
                 ? `<button class="btn" data-act="skillasc" data-id="${sk.uid}" ${bagCanAsc ? '' : 'disabled'}>升階(${formatNum(bagAscCost)}同名本)</button>`
@@ -827,7 +833,7 @@ function roleSkillBlock(state: GameState, role: Role): string {
 
   return `
     <div class="card"><div class="body">
-      <div class="title">已裝技能 · 角色同名卡 x${stack}（增效用）</div>
+      <div class="title">已裝技能 · 強化綁出戰格 · 同名卡 x${stack}</div>
       ${slots}
     </div></div>
     <div class="card" style="margin-top:8px"><div class="body">
@@ -865,29 +871,34 @@ function roleEquipBlock(state: GameState, role: Role): string {
   const wornUid = wornSlots[focus]
   const wornEq = wornUid ? state.equips.find((e) => e.uid === wornUid) : undefined
   const wornParsed = wornEq ? parseEquipDefId(wornEq.defId) : null
+  const focusEnhance = getEquipEnhanceLevel(state, role, focus)
 
   const slotChips = EQUIP_SLOTS.map((slot) => {
     const uidEq = wornSlots[slot]
     const eq = uidEq ? state.equips.find((e) => e.uid === uidEq) : undefined
     const p = eq ? parseEquipDefId(eq.defId) : null
     const bagN = slotBags.find((s) => s.slot === slot)?.count ?? 0
-    const tip = p && eq ? `T${p.tier} ${eq.rarity} +${eq.level}` : bagN ? `庫存 ${bagN}` : '空'
+    const enh = getEquipEnhanceLevel(state, role, slot)
+    const tip = p && eq ? `T${p.tier} ${eq.rarity} 格+${enh}` : `格+${enh}${bagN ? ` · 庫存 ${bagN}` : ''}`
     return `<button class="btn equip-slot-chip ${focus === slot ? 'primary' : ''}" data-act="equipslot" data-role="${role}" data-slot="${slot}" title="${escapeHtml(tip)}">
       <span class="esc-name">${EQUIP_SLOT_LABEL[slot]}</span>
-      <span class="esc-meta">${p ? `T${p.tier}` : '空'} · ${bagN}</span>
+      <span class="esc-meta">${p ? `T${p.tier}` : '空'} · +${enh}</span>
     </button>`
   }).join('')
 
   const wornBlock = wornEq && wornParsed
     ? `<div class="row-item worn-equip" style="margin-top:8px">
-        <div class="row-main">目前：T${wornParsed.tier} · ${raritySpan(wornEq.rarity)} +${wornEq.level}</div>
-        <div class="sub">${ownedEquipStatLine(wornEq)}</div>
+        <div class="row-main">目前：T${wornParsed.tier} · ${raritySpan(wornEq.rarity)} · 格+${focusEnhance}</div>
+        <div class="sub">${ownedEquipStatLine(wornEq, focusEnhance)}</div>
         <div class="btn-row">
-          <button class="btn" data-act="equp" data-id="${wornEq.uid}">+Lv</button>
+          <button class="btn" data-act="equp" data-id="${wornEq.uid}">強化格</button>
           <button class="btn" data-act="unequip-role" data-role="${role}" data-slot="${focus}">卸下</button>
         </div>
       </div>`
-    : `<div class="muted" style="margin-top:8px">此部位尚未穿裝</div>`
+    : `<div class="muted" style="margin-top:8px">此部位尚未穿裝 · 格強化 +${focusEnhance}（換裝保留）</div>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="btn" data-act="equp-slot" data-role="${role}" data-slot="${focus}" disabled title="需先裝上裝備">強化格 +${focusEnhance}</button>
+      </div>`
 
   const bagList =
     slotStacks
@@ -899,11 +910,12 @@ function roleEquipBlock(state: GameState, role: Role): string {
         const wearLocked = !!ch && p.tier > maxEquipTierForRebirth(ch.rebirth ?? 0)
         const needRebirth = rebirthRequiredForEquipTier(p.tier)
         const count = stack.items.length
+        const showLv = worn ? focusEnhance : 0
         return `<div class="row-item">
-          <div class="row-main">T${p.tier} · ${raritySpan(stack.rarity)} ${equipLevelLabel(stack.items)}${count > 1 ? ` · x${count}` : ''}${worn ? ' · 穿' : ''}</div>
-          <div class="sub">${ownedEquipStatLine(eq)}</div>
+          <div class="row-main">T${p.tier} · ${raritySpan(stack.rarity)}${worn ? ` · 格+${showLv}` : ''}${count > 1 ? ` · x${count}` : ''}${worn ? ' · 穿' : ''}</div>
+          <div class="sub">${ownedEquipStatLine(eq, showLv)}${worn ? '' : ' · 強化綁部位格'}</div>
           <div class="btn-row">
-            <button class="btn" data-act="equp" data-id="${eq.uid}">+Lv</button>
+            ${worn ? `<button class="btn" data-act="equp" data-id="${eq.uid}">強化格</button>` : ''}
             <button class="btn ${worn ? '' : 'primary'}" data-act="wear-role" data-role="${role}" data-id="${eq.uid}" ${wearLocked || worn ? 'disabled' : ''}>${wearLocked ? `轉${needRebirth}` : worn ? '穿著中' : '裝上'}</button>
           </div>
         </div>`
@@ -912,9 +924,9 @@ function roleEquipBlock(state: GameState, role: Role): string {
 
   return `<div class="panel compact-panel">
     <div class="section-title">${ROLE_LABEL[role]} · 裝備</div>
-    <div class="muted">先點部位，再從此部位清單裝／強化 · 背包共 ${list.length} 件</div>
+    <div class="muted">先點部位 · 強化綁部位格（換裝保留）· 背包 ${list.length} 件</div>
     <div class="equip-slot-grid" style="margin-top:8px">${slotChips}</div>
-    <div class="section-title" style="margin-top:12px">${EQUIP_SLOT_LABEL[focus]}</div>
+    <div class="section-title" style="margin-top:12px">${EQUIP_SLOT_LABEL[focus]} · 格+${focusEnhance}</div>
     ${wornBlock}
     <div class="muted" style="margin-top:10px">${EQUIP_SLOT_LABEL[focus]}庫存 · ${slotStacks.length} 組 · 品質排序</div>
     <div class="list tight-list" style="margin-top:6px">${bagList}</div>
@@ -1056,13 +1068,6 @@ function stackEquipsByTier(list: OwnedEquip[]): EquipStack[] {
   return stacks
 }
 
-function equipLevelLabel(items: OwnedEquip[]): string {
-  const levels = items.map((i) => i.level)
-  const mn = Math.min(...levels)
-  const mx = Math.max(...levels)
-  return mn === mx ? `+${mn}` : `+${mn}~${mx}`
-}
-
 /** 後勤可指派／派遣：閒置優先，再高增效 */
 function sortLogisticsCandidates(list: OwnedCharacter[]): OwnedCharacter[] {
   return [...list].sort((a, b) => {
@@ -1150,14 +1155,14 @@ function trainTeamView(state: GameState): string {
   } else if (tab === 'char') {
     body = `<div class="panel">
       <div class="section-title">${ROLE_LABEL[focusRole]} · ${nameSpan(CHAR_MAP[focus.defId].name, focus.rarity)}</div>
-      <div class="sub">${CHAR_MAP[focus.defId].element} · Lv.${focus.level}/${CHAR_LEVEL_MAX} · 進階${focus.ascend} · 轉${rebirth}（T0～T${maxTier}）· 增效${focus.boost}</div>
+      <div class="sub">${CHAR_MAP[focus.defId].element} · 格Lv.${getCharEnhanceLevel(state, focus)}/${CHAR_LEVEL_MAX} · 進階${focus.ascend} · 轉${rebirth}（T0～T${maxTier}）· 增效${focus.boost}</div>
       <div class="stats-row" style="margin-top:8px">
         <span>攻 ${formatNum(stats.atk)}</span>
         <span>血 ${formatNum(stats.hp)}</span>
         <span>防 ${formatNum(stats.def)}</span>
         <span>盾 ${formatNum(stats.shield)}</span>
       </div>
-      ${levelButtons(focus)}
+      ${levelButtons(state, focus)}
       <div class="btn-row" style="margin-top:10px">
         <button class="btn" data-act="ascend" data-id="${focus.uid}">進階(${formatNum(ascendCost)}魂)</button>
         <button class="btn" data-act="boost" data-id="${focus.uid}" ${stack < boostCost + 1 ? 'disabled' : ''}>增效(耗${boostCost}張)·堆x${stack}</button>
@@ -1203,7 +1208,7 @@ function trainTeamView(state: GameState): string {
             return `<button class="train-pick ${active ? 'active' : ''}" data-act="trainfocus-role" data-role="${role}">
               <img class="train-pick-frame ${role}" src="${def.portrait}" alt="${def.name}" />
               <div class="fp-name">${nameSpan(def.name, ch.rarity)}</div>
-              <div class="fp-meta">Lv.${ch.level}${cap ? ' ·長' : ''}</div>
+              <div class="fp-meta">Lv.${getCharEnhanceLevel(state, ch)}${cap ? ' ·長' : ''}</div>
             </button>`
           })
           .join('')}
@@ -1931,7 +1936,8 @@ function gameGuideModal(): string {
       <p><strong>爬塔</strong>：主塔／副塔／技能本／討伐訓練可沖層或原地刷。掛在<strong>已解鎖最高層</strong>會套「前沿加壓」（敵更肉／更痛）；<strong>降層掛機</strong>較穩、適合養成。技能本通關產同名技能本（優先出戰技）並冷卻 ${SKILL_DUNGEON_COOLDOWN_SEC} 秒（主塔 ${SKILL_DUNGEON_UNLOCK} 解鎖）；討伐訓練主產破王徽。戰敗扣資源（水晶見底時免罰）。王塔／神王可空刷或定向。</p>
       <p><strong>職業編隊</strong>：戰士、法師、牧師各有獨立 loadout——出戰角色、七部位裝備、三技能格、遺物。換角色不改裝備配置。</p>
       <p><strong>裝備</strong>：後勤打造（藍圖＋熔鍛＋金鑽），高品機率偏低；強化只加等級，不能事後升品。</p>
-      <p><strong>技能</strong>：商店普通／稀有（金鑽）。<strong>升級</strong>耗法術精華（隨等級遞增，小幅加威力）；<strong>升階</strong>耗<strong>同名技能本</strong>（第 n 階＝第 n 個質數×3；技能本優先掉給出戰技）。基礎<strong>輔助</strong>各職不同：戰士穿盾戰吼、法師禁療壓制、牧師主療續航。王塔／神王可掉獨特技。同類技能 CD＝2 回合，三技能輪替。戰鬥超過 28 完整回合敵方暴走。介面會顯示攻／盾／療係數與特效數字。</p>
+      <p><strong>技能</strong>：商店普通／稀有（金鑽）。<strong>升級</strong>耗法術精華（強化綁出戰格，換技保留）；<strong>升階</strong>耗<strong>同名技能本</strong>（品質仍綁技能本體）。基礎<strong>輔助</strong>各職不同：戰士穿盾戰吼、法師禁療壓制、牧師主療續航。王塔／神王可掉獨特技。同類技能 CD＝2 回合，三技能輪替。</p>
+      <p><strong>強化綁格</strong>：角色／裝備／技能的<strong>強化等級</strong>存在職業出戰格上——換人、換裝、換技都保留格上等級；品質／進階／轉生／技能本仍綁本體。</p>
       <p><strong>克制王階</strong>：專克王塔／神王（對王階傷害加成）。首通王階可自選 1 枚；其餘以破王徽＋技能卡（＋少量水晶）於商店兌換。破王徽來自王階通關／戰敗機率與討伐訓練。不進王塔／神王獨特掉落池。</p>
       <p><strong>後勤</strong>：每工位最多 ${workStationCap(1)} 人（主塔每 1000 層 +1，上限 6）；每 ${WORK_BATCH_SEC} 秒一批；主塔每 100 層 +4%（上限 80%）。含打造、訂單、派遣。</p>
       <p><strong>養成消耗</strong>：進階神魂、增效同名卡（前期弱、後期漸強）、技能升級精華、技能升階同名技能本（質數×3）、裝備熔鍛／金鑽皆隨次數遞增；增效第 n 次耗 n 張多餘同名卡。通用技能卡仍用於王塔定向／克制技兌換／後勤。</p>

@@ -119,6 +119,10 @@ export interface SkillDef {
 export interface OwnedSkill {
   uid: string
   skillId: string
+  /**
+   * 舊欄位：強化等級已遷至 RoleLoadout.skillLevels。
+   * 僅作存檔遷移／未裝備時的顯示後備，戰鬥以出戰格為準。
+   */
   level: number
   rarity: Rarity
   /** 同名技能本數量（技能本掉落／升階消耗；不與通用技能卡互通） */
@@ -147,6 +151,10 @@ export interface EquipDef {
 export interface OwnedEquip {
   uid: string
   defId: string
+  /**
+   * 舊欄位：強化等級已遷至 RoleLoadout.equipLevels。
+   * 僅作存檔遷移／未裝備時的顯示後備，戰鬥以出戰格為準。
+   */
   level: number
   rarity: Rarity
 }
@@ -169,6 +177,10 @@ export interface CharacterDef {
 export interface OwnedCharacter {
   uid: string
   defId: string
+  /**
+   * 角色本體等級：未出戰時可養成（打工用）；
+   * 出戰時戰鬥／轉生以 RoleLoadout.charLevel 為準（換人保留格上等級）。
+   */
   level: number
   rarity: Rarity
   ascend: number
@@ -185,11 +197,17 @@ export interface OwnedCharacter {
   dispatchReward?: Partial<Resources>
 }
 
-/** 職業出戰格：角色／裝備／技能互相獨立 */
+/** 職業出戰格：角色／裝備／技能互相獨立；強化等級綁格不綁物 */
 export interface RoleLoadout {
   characterUid?: string
+  /** 出戰格角色強化等級（換人保留） */
+  charLevel?: number
   equips: Partial<Record<EquipSlot, string>>
+  /** 各部位裝備強化等級（換裝保留） */
+  equipLevels?: Partial<Record<EquipSlot, number>>
   skills: Partial<Record<SkillKind, string>>
+  /** 攻／防／輔技能強化等級（換技保留） */
+  skillLevels?: Partial<Record<SkillKind, number>>
   relicId?: string
 }
 

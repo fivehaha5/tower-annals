@@ -18,8 +18,8 @@ export { CHAR_LEVEL_MAX } from './balance'
 export const GAME_NAME = '異塔編年'
 /** 作廢舊存檔：換 key */
 export const SAVE_KEY = 'tower-annals-save-v3'
-/** v5：破王徽／討伐訓練／克制王階正式獲取；可由 v3～v4 遷移 */
-export const SAVE_VERSION = 6
+/** v7：角色／裝備／技能強化等級綁出戰格；可由舊版遷移 */
+export const SAVE_VERSION = 7
 export const GODKING_UNLOCK = 10000
 export const TICK_MS = 1000
 /** 定向掉落基礎水晶（再 × 輪迴） */
@@ -35,7 +35,13 @@ export const OFFLINE_CAP_SEC = 4 * 3600
 export const FOREGROUND_OFFLINE_THRESHOLD_SEC = 30
 
 export function emptyLoadout(): RoleLoadout {
-  return { equips: {}, skills: {} }
+  return {
+    charLevel: 1,
+    equips: {},
+    equipLevels: {},
+    skills: {},
+    skillLevels: {},
+  }
 }
 
 export function defaultFormation(): Role[] {
