@@ -775,6 +775,7 @@ function charCard(state: GameState, ch: OwnedCharacter, opts?: { showDeploy?: bo
       <div class="btn-row" style="margin-top:8px">
         <button class="btn" data-act="ascend" data-id="${ch.uid}">進階(${formatNum(ascendCost)}神魂)</button>
         <button class="btn" data-act="boost" data-id="${ch.uid}" ${stack < boostCost + 1 ? 'disabled' : ''}>增效(耗${boostCost}張)</button>
+        <button class="btn" data-act="boost-max" data-id="${ch.uid}" ${stack < boostCost + 1 ? 'disabled' : ''}>一鍵增效</button>
         ${showDeploy ? `<button class="btn" data-act="deploy" data-id="${ch.uid}">${deployed ? '已出戰' : '出戰'}</button>` : ''}
       </div>
       <div class="stack-count">x${stack}</div>
@@ -1180,9 +1181,10 @@ function trainTeamView(state: GameState): string {
         <span>盾 ${formatNum(stats.shield)}</span>
       </div>
       ${levelButtons(state, focus)}
-      <div class="btn-row" style="margin-top:10px">
+      <div class="btn-row" style="margin-top:10px;flex-wrap:wrap">
         <button class="btn" data-act="ascend" data-id="${focus.uid}">進階(${formatNum(ascendCost)}魂)</button>
         <button class="btn" data-act="boost" data-id="${focus.uid}" ${stack < boostCost + 1 ? 'disabled' : ''}>增效(耗${boostCost}張)·堆x${stack}</button>
+        <button class="btn" data-act="boost-max" data-id="${focus.uid}" ${stack < boostCost + 1 ? 'disabled' : ''}>一鍵增效</button>
       </div>
       <div class="muted" style="margin-top:8px">更換出戰</div>
       <div class="btn-row" style="margin-top:4px;flex-wrap:wrap">${roleDeployPicker(state, focusRole)}</div>
@@ -2712,6 +2714,10 @@ function bind(root: HTMLElement) {
       if (act === 'boost' && id) {
         const err = actions.boostCharacter(id)
         toast(root, err ?? '增效成功')
+      }
+      if (act === 'boost-max' && id) {
+        const r = actions.boostCharacterMax(id)
+        toast(root, r.error ?? `一鍵增效 ×${r.times} → 增效${r.boost}`)
       }
       if (act === 'deploy' && id) actions.deployCharacter(id)
       if (act === 'skillup' && id) {
