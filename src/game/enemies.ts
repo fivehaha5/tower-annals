@@ -1,7 +1,11 @@
-import type { Element, EnemySnapshot, IdleMode, Stats } from './types'
+import type { BossMechanicId, Element, EnemySnapshot, IdleMode, Stats } from './types'
 import { BOSS_CHARACTERS, GODKING_CHARACTERS } from './data/characters'
 import {
   ENEMY_ATK_FROM_POWER,
+  ENEMY_COMPARE_ATK_WEIGHT,
+  ENEMY_COMPARE_EHP_DIVISOR,
+  ENEMY_DEF_ANCHOR_BONUS,
+  ENEMY_DEF_ANCHOR_POWER,
   ENEMY_HP_FROM_POWER,
   ENEMY_SHIELD_FROM_POWER,
   bossEnemyPower,
@@ -12,10 +16,31 @@ import {
 import { BOSS_MECHANIC_BY_CHAR } from './mechanics'
 import { portraitPath } from './util'
 
-/** 與隊伍戰力同一套加權；敵方以攻推估等效防 */
-export function enemyDisplayPower(stats: Pick<Stats, 'hp' | 'shield' | 'atk'> & { def?: number }): number {
-  const def = stats.def ?? Math.floor(stats.atk * 0.45)
-  return Math.floor(stats.hp * 0.3 + stats.shield * 0.25 + stats.atk * 8 + def * 4)
+/** 減傷係數（與 combat.enemyDefenseFactor 同式，供對照戰力換算） */
+function defenseFactorFromSeed(defenseSeed: number, mechanic?: BossMechanicId): number {
+  const p = Math.max(1, defenseSeed)
+  const scale = Math.pow(p / ENEMY_DEF_ANCHOR_POWER, 0.62)
+  let factor = 1 + ENEMY_DEF_ANCHOR_BONUS * scale
+  if (mechanic === 'stoneSkin') factor *= 1.15
+  if (mechanic === 'mountainSpine') factor *= 1.25
+  return factor
+}
+
+/**
+ * 敵方顯示戰力：偏「有效耐久」（血盾×減傷），與隊伍輸出戰力對照。
+ * defenseSeed 用層數難度種子，勿用顯示戰力本身。
+ */
+export function enemyDisplayPower(
+  stats: Pick<Stats, 'hp' | 'shield' | 'atk'>,
+  defenseSeed: number,
+  mechanic?: BossMechanicId,
+): number {
+  const ehp = Math.max(1, stats.hp + stats.shield)
+  const defF = defenseFactorFromSeed(defenseSeed, mechanic)
+  return Math.max(
+    1,
+    Math.floor((ehp * defF) / ENEMY_COMPARE_EHP_DIVISOR + stats.atk * ENEMY_COMPARE_ATK_WEIGHT),
+  )
 }
 
 /** 高難度種子額外生命（log soft），讓數字高的怪真的更肉 */
@@ -149,13 +174,17 @@ export function enemyTargetPower(mode: IdleMode, floor: number): number {
 
 function statsFromPower(
   seed: number,
-  opts: { boss: boolean; mini: boolean },
-): Pick<EnemySnapshot, 'hp' | 'maxHp' | 'shield' | 'maxShield' | 'atk' | 'power'> {
+  opts: { boss: boolean; mini: boolean; mechanic?: BossMechanicId },
+): Pick<
+  EnemySnapshot,
+  'hp' | 'maxHp' | 'shield' | 'maxShield' | 'atk' | 'power' | 'defenseSeed'
+> {
   const shieldMult = opts.boss ? 2.2 : opts.mini ? 1.55 : 1
   const hp = Math.max(1, Math.floor(seed * ENEMY_HP_FROM_POWER * hpScaleForSeed(seed)))
   const shield = Math.max(0, Math.floor(seed * ENEMY_SHIELD_FROM_POWER * shieldMult))
   const atk = Math.max(1, Math.floor(seed * ENEMY_ATK_FROM_POWER))
-  const power = enemyDisplayPower({ hp, shield, atk })
+  const defenseSeed = Math.max(1, Math.floor(seed))
+  const power = enemyDisplayPower({ hp, shield, atk }, defenseSeed, opts.mechanic)
   return {
     hp,
     maxHp: hp,
@@ -163,6 +192,7 @@ function statsFromPower(
     maxShield: shield,
     atk,
     power,
+    defenseSeed,
   }
 }
 
@@ -170,8 +200,7 @@ export function buildEnemy(mode: IdleMode, floor: number): EnemySnapshot {
   const f = Math.max(1, floor)
   const boss = mode === 'boss' || mode === 'godking'
   const mini = isMiniBossFloor(mode, f)
-  const power = enemyTargetPower(mode, f)
-  const stats = statsFromPower(power, { boss, mini: mini && !boss })
+  const seed = enemyTargetPower(mode, f)
 
   let mechanic = undefined as EnemySnapshot['mechanic']
   let gateCharges: number | undefined
@@ -183,6 +212,8 @@ export function buildEnemy(mode: IdleMode, floor: number): EnemySnapshot {
   }
   if (charId) mechanic = BOSS_MECHANIC_BY_CHAR[charId]
   if (mechanic === 'gateBlock') gateCharges = 3
+
+  const stats = statsFromPower(seed, { boss, mini: mini && !boss, mechanic })
 
   const el =
     mode === 'boss' || mode === 'godking'

@@ -265,7 +265,15 @@ export interface EnemySnapshot {
   isBoss: boolean
   isMiniBoss: boolean
   portrait?: string
+  /**
+   * 顯示／對照用戰力（偏有效耐久，方便和隊伍輸出戰力比較）。
+   * 不直接等於減傷種子。
+   */
   power: number
+  /**
+   * 戰鬥減傷用種子（由層數難度表生成；與顯示戰力分離）。
+   */
+  defenseSeed?: number
   hp: number
   maxHp: number
   shield: number

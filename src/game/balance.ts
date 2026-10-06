@@ -153,7 +153,7 @@ export const ENEMY_HP_FROM_POWER = 0.88
 export const ENEMY_SHIELD_FROM_POWER = 0.22
 
 /**
- * 敵方減傷錨點：無硬頂。
+ * 敵方減傷錨點：吃 defenseSeed（層數難度），與顯示戰力分離。
  */
 export const ENEMY_DEF_ANCHOR_POWER = 220_000
 export const ENEMY_DEF_ANCHOR_BONUS = 13
@@ -164,8 +164,23 @@ export const ENEMY_DEF_ANCHOR_BONUS = 13
  */
 export const CP_UNDERDOG_MITIGATION_EXP = 1.0
 
-/** 技能對戰力貢獻係數 */
-export const SKILL_CP_WEIGHT = 0.85
+/**
+ * 敵方「對照戰力」：有效血盾 × 減傷 / 此係數 ≈ 與隊伍輸出戰力同一量級。
+ * 調高 → 同層怪顯示戰力變低（看起來更好打）；調低則相反。
+ */
+export const ENEMY_COMPARE_EHP_DIVISOR = 7.2
+
+/** 敵方對照戰力中的攻擊威脅權重（偏低，主看耐久） */
+export const ENEMY_COMPARE_ATK_WEIGHT = 3.5
+
+/** 技能對隊伍輸出戰力貢獻係數 */
+export const SKILL_CP_WEIGHT = 1.05
+
+/** 隊伍戰力面板權重（偏輸出，方便對照能不能打） */
+export const TEAM_CP_ATK = 12
+export const TEAM_CP_DEF = 1.4
+export const TEAM_CP_HP = 0.05
+export const TEAM_CP_SHIELD = 0.04
 
 /**
  * 掛在「已解鎖最高層」沖層時的敵方強化（血／盾／攻）。

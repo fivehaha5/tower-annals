@@ -2,7 +2,7 @@ import { CHAR_MAP } from './data/characters'
 import { EQUIP_SLOTS, makeEquipDef, parseEquipDefId } from './data/equipment'
 import { RELIC_MAP } from './data/relics'
 import { SKILL_MAP } from './data/skills'
-import { buildEnemy } from './enemies'
+import { buildEnemy, enemyDisplayPower } from './enemies'
 import { rollClearLoot } from './drops'
 import { roleRebirthBonus } from './mechanics'
 import type {
@@ -52,6 +52,10 @@ import {
   SINGLE_SKILL_FOCUS,
   SKILL_CP_WEIGHT,
   SKILL_KIND_COOLDOWN_TURNS,
+  TEAM_CP_ATK,
+  TEAM_CP_DEF,
+  TEAM_CP_HP,
+  TEAM_CP_SHIELD,
   UNIQUE_SKILL_BONUS,
   boostWorkBonus,
   skillLevelPowerBonus,
@@ -226,9 +230,11 @@ function skillStrength(sk: OwnedSkill | undefined, enhanceLevel?: number): numbe
   return (1 + skillLevelPowerBonus(lv)) * rarityMult(sk.rarity) * uniqueBonus
 }
 
-/** 與敵方顯示戰力共用：血／盾／攻／防加權 */
+/** 隊伍輸出戰力：偏攻擊，與敵方耐久對照戰力分開算 */
 export function combatPowerFromStats(s: Stats): number {
-  return Math.floor(s.hp * 0.3 + s.shield * 0.25 + s.atk * 8 + s.def * 4)
+  return Math.floor(
+    s.hp * TEAM_CP_HP + s.shield * TEAM_CP_SHIELD + s.atk * TEAM_CP_ATK + s.def * TEAM_CP_DEF,
+  )
 }
 
 /** 出戰技能爆發倍率估價（含等級／稀有度／單技能補償） */
@@ -251,8 +257,8 @@ export function roleSkillBurstScore(state: GameState, role: Role): number {
 }
 
 /**
- * 隊伍戰力：角色面板 + 出戰技能爆發。
- * 舊版不算技能，會出現「戰力 1.3M 卻秒殺 3M」的錯覺。
+ * 隊伍戰力：角色面板（偏輸出）+ 出戰技能爆發。
+ * 與敵方「耐久對照戰力」用不同曲線，方便判斷能不能打。
  */
 export function teamPower(state: GameState): number {
   return getTeam(state).reduce((sum, ch) => {
@@ -262,19 +268,37 @@ export function teamPower(state: GameState): number {
     const base = combatPowerFromStats(s)
     const burst = roleSkillBurstScore(state, def.role)
     // 普攻基準 ≈0.7；高出的部分視為技能對有效輸出／戰力的貢獻
-    const skillCp = Math.floor(s.atk * 8 * Math.max(0, burst - BASIC_ATTACK_POWER) * SKILL_CP_WEIGHT)
+    const skillCp = Math.floor(
+      s.atk * TEAM_CP_ATK * Math.max(0, burst - BASIC_ATTACK_POWER) * SKILL_CP_WEIGHT,
+    )
     return sum + base + skillCp
   }, 0)
 }
 
-/** 敵方減傷：無硬頂，20 萬錨點約 ×15，其後隨戰力續增 */
-export function enemyDefenseFactor(enemyPower: number, mechanic?: BattleSnapshot['enemy']['mechanic']): number {
-  const p = Math.max(1, enemyPower)
+/**
+ * 敵方減傷：吃 defenseSeed（層數難度），與顯示對照戰力分離。
+ * 舊快照若缺 seed 才退回 power。
+ */
+export function enemyDefenseFactor(
+  defenseSeed: number,
+  mechanic?: BattleSnapshot['enemy']['mechanic'],
+): number {
+  const p = Math.max(1, defenseSeed)
   const scale = Math.pow(p / ENEMY_DEF_ANCHOR_POWER, 0.62)
   let factor = 1 + ENEMY_DEF_ANCHOR_BONUS * scale
   if (mechanic === 'stoneSkin') factor *= 1.15
   if (mechanic === 'mountainSpine') factor *= 1.25
   return factor
+}
+
+/** 隊伍輸出戰力 vs 敵方對照戰力：優勢／可打／吃力／建議降層 */
+export function fightCompareHint(teamCp: number, enemyCompareCp: number): string {
+  const e = Math.max(1, enemyCompareCp)
+  const r = teamCp / e
+  if (r >= 1.15) return '優勢'
+  if (r >= 0.85) return '可打'
+  if (r >= 0.7) return '吃力'
+  return '建議降層'
 }
 
 export function teamTotals(state: GameState): Stats {
@@ -304,9 +328,16 @@ export function createBattle(state: GameState): BattleSnapshot {
     enemy.shield = Math.floor(enemy.shield * m)
     enemy.maxShield = enemy.shield
     enemy.atk = Math.max(1, Math.floor(enemy.atk * m))
-    enemy.power = Math.max(1, Math.floor(enemy.power * m))
+    // 減傷種子隨前沿加壓；對照戰力依新血盾攻重算
+    enemy.defenseSeed = Math.max(1, Math.floor((enemy.defenseSeed ?? enemy.power) * m))
   }
+  enemy.power = enemyDisplayPower(
+    { hp: enemy.hp, shield: enemy.shield, atk: enemy.atk },
+    enemy.defenseSeed ?? enemy.power,
+    enemy.mechanic,
+  )
   const totals = teamTotals(state)
+  const tp = teamPower(state)
   return {
     teamHp: totals.hp,
     teamMaxHp: totals.hp,
@@ -314,7 +345,7 @@ export function createBattle(state: GameState): BattleSnapshot {
     teamMaxShield: totals.shield,
     enemy,
     log: atFrontier ? '掛機戰鬥中…（前沿加壓）' : '掛機戰鬥中…',
-    winning: teamPower(state) >= enemy.power * 0.85,
+    winning: tp >= enemy.power * 0.85,
     chargeShield: 0,
     actIndex: 0,
     roundDmgToEnemy: 0,
@@ -584,10 +615,11 @@ function resolvePartyAction(
     trueDealt *= m
   }
 
-  let enemyDefFactor = enemyDefenseFactor(b.enemy.power, b.enemy.mechanic)
+  const defSeed = b.enemy.defenseSeed ?? b.enemy.power
+  let enemyDefFactor = enemyDefenseFactor(defSeed, b.enemy.mechanic)
 
   let dmgToEnemy = Math.floor(dealt / enemyDefFactor) + Math.floor(trueDealt)
-  // 真實傷害仍吃戰力差距軟閘，避免純真傷無視高戰力怪
+  // 真實傷害仍吃對照戰力差距軟閘，避免純真傷無視高耐久怪
   const tp = Math.max(1, teamPower(state))
   const cpRatio = b.enemy.power / tp
   if (cpRatio > 1.1) {
