@@ -170,6 +170,17 @@ function workPickTab(): WorkPickTab {
   return (window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab ?? 'idle'
 }
 
+type WorkRoleFilter = 'all' | Role
+
+function workRoleFilter(): WorkRoleFilter {
+  return (window as unknown as { __workRoleFilter?: WorkRoleFilter }).__workRoleFilter ?? 'all'
+}
+
+function matchWorkRole(ch: OwnedCharacter, filter: WorkRoleFilter): boolean {
+  if (filter === 'all') return true
+  return CHAR_MAP[ch.defId]?.role === filter
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -1715,15 +1726,16 @@ function workCharCard(
 function logisticsDetailView(state: GameState, job: WorkJob): string {
   const fighting = fightingUids(state)
   const stationCap = workStationCap(state.floors.main)
-  const workers = sortByWorkEfficiency(
+  const roleFilter = workRoleFilter()
+  const workersAll = sortByWorkEfficiency(
     state.roster.filter((ch) => ch.workJob === job && !fighting.has(ch.uid) && !isOnDispatch(ch)),
   )
-  const idle = sortByWorkEfficiency(
+  const idleAll = sortByWorkEfficiency(
     state.roster.filter(
       (ch) => !fighting.has(ch.uid) && !ch.workJob && !isOnDispatch(ch),
     ),
   )
-  const elsewhere = sortByWorkEfficiency(
+  const elsewhereAll = sortByWorkEfficiency(
     state.roster.filter(
       (ch) =>
         !fighting.has(ch.uid) &&
@@ -1732,25 +1744,34 @@ function logisticsDetailView(state: GameState, job: WorkJob): string {
         !isOnDispatch(ch),
     ),
   )
-  const full = workers.length >= stationCap
+  const workers = workersAll.filter((ch) => matchWorkRole(ch, roleFilter))
+  const idle = idleAll.filter((ch) => matchWorkRole(ch, roleFilter))
+  const elsewhere = elsewhereAll.filter((ch) => matchWorkRole(ch, roleFilter))
+  const full = workersAll.length >= stationCap
   const tab = workPickTab()
   const resKey = WORK_RES_KEY[job]
   const resMeta = RESOURCE_META.find((m) => m.key === resKey)
+  const assignedAllCount = workersAll.length + elsewhereAll.length
   const assignedCount = workers.length + elsewhere.length
+  const poolForRoleCount = tab === 'idle' ? idleAll : [...workersAll, ...elsewhereAll]
+  const roleCount = (role: Role) =>
+    poolForRoleCount.filter((ch) => CHAR_MAP[ch.defId]?.role === role).length
 
   const idleList = idle.length
     ? `<div class="list">${idle.map((ch) => workCharCard(ch, { job, mode: 'assign', full })).join('')}</div>`
-    : '<p class="muted">目前沒有未指派角色（出戰／派遣中不顯示）。</p>'
+    : idleAll.length
+      ? '<p class="muted">此職業目前沒有未指派角色。</p>'
+      : '<p class="muted">目前沒有未指派角色（出戰／派遣中不顯示）。</p>'
 
   const assignedList =
     assignedCount
       ? `<div class="list">
           ${
             workers.length
-              ? `<div class="muted" style="margin:6px 0 4px">本工位 · ${workers.length}/${stationCap}</div>${workers
+              ? `<div class="muted" style="margin:6px 0 4px">本工位 · ${workers.length}${roleFilter === 'all' ? `/${stationCap}` : ''}（總在職 ${workersAll.length}/${stationCap}）</div>${workers
                   .map((ch) => workCharCard(ch, { job, mode: 'remove', full }))
                   .join('')}`
-              : '<div class="muted" style="margin:6px 0 4px">本工位尚無員工</div>'
+              : `<div class="muted" style="margin:6px 0 4px">${roleFilter === 'all' ? '本工位尚無員工' : '此職業本工位尚無員工'} · 總在職 ${workersAll.length}/${stationCap}</div>`
           }
           ${
             elsewhere.length
@@ -1767,21 +1788,29 @@ function logisticsDetailView(state: GameState, job: WorkJob): string {
               : ''
           }
         </div>`
-      : '<p class="muted">目前沒有已指派角色。</p>'
+      : assignedAllCount
+        ? '<p class="muted">此職業目前沒有已指派角色。</p>'
+        : '<p class="muted">目前沒有已指派角色。</p>'
 
   return `
     <div class="panel">
       <button class="btn tap-target" data-act="logistics-back" style="width:100%;margin-bottom:10px">← 返回工位列表</button>
       <div class="section-title">${WORK_LABEL[job]}工位</div>
       <p class="muted">${WORK_DESC[job]} · ${resMeta?.name ?? ''} 庫存 ${formatNum(state.resources[resKey])}</p>
-      <p class="muted">在職 ${workers.length}/${stationCap} · 超出人數不產物（依增效／等級優先）</p>
+      <p class="muted">在職 ${workersAll.length}/${stationCap} · 超出人數不產物（依增效／等級優先）</p>
       <div class="btn-row loadout-tabs work-pick-tabs" style="margin-top:10px">
-        <button class="btn ${tab === 'idle' ? 'primary' : ''}" data-act="workpick" data-pick="idle">未指派 ${idle.length}</button>
-        <button class="btn ${tab === 'assigned' ? 'primary' : ''}" data-act="workpick" data-pick="assigned">已指派 ${assignedCount}</button>
+        <button class="btn ${tab === 'idle' ? 'primary' : ''}" data-act="workpick" data-pick="idle">未指派 ${idleAll.length}</button>
+        <button class="btn ${tab === 'assigned' ? 'primary' : ''}" data-act="workpick" data-pick="assigned">已指派 ${assignedAllCount}</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn ${roleFilter === 'all' ? 'primary' : ''}" data-act="workrole" data-filter="all">全部 ${poolForRoleCount.length}</button>
+        <button class="btn ${roleFilter === 'warrior' ? 'primary' : ''}" data-act="workrole" data-filter="warrior">戰士 ${roleCount('warrior')}</button>
+        <button class="btn ${roleFilter === 'mage' ? 'primary' : ''}" data-act="workrole" data-filter="mage">法師 ${roleCount('mage')}</button>
+        <button class="btn ${roleFilter === 'priest' ? 'primary' : ''}" data-act="workrole" data-filter="priest">牧師 ${roleCount('priest')}</button>
       </div>
     </div>
     <div class="panel">
-      <div class="section-title">${tab === 'idle' ? '未指派 · 高增效優先' : '已指派 · 本工位／其他工位'}</div>
+      <div class="section-title">${tab === 'idle' ? '未指派 · 高增效優先' : '已指派 · 本工位／其他工位'}${roleFilter !== 'all' ? ` · ${ROLE_LABEL[roleFilter]}` : ''}</div>
       ${tab === 'idle' ? idleList : assignedList}
     </div>
   `
@@ -2665,18 +2694,27 @@ function bind(root: HTMLElement) {
         ;(window as unknown as { __logisticsPage?: LogisticsPage }).__logisticsPage = 'detail'
         ;(window as unknown as { __logisticsJob?: WorkJob | null }).__logisticsJob = job
         ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = 'idle'
+        ;(window as unknown as { __workRoleFilter?: WorkRoleFilter }).__workRoleFilter = 'all'
         actions.setTab('logistics')
       }
       if (act === 'logistics-back') {
         ;(window as unknown as { __logisticsPage?: LogisticsPage }).__logisticsPage = 'stations'
         ;(window as unknown as { __logisticsJob?: WorkJob | null }).__logisticsJob = null
         ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = 'idle'
+        ;(window as unknown as { __workRoleFilter?: WorkRoleFilter }).__workRoleFilter = 'all'
         actions.setTab('logistics')
       }
       if (act === 'workpick') {
         const t = ((el as HTMLElement).dataset.pick ?? (el as HTMLElement).dataset.tab) as WorkPickTab
         if (t === 'idle' || t === 'assigned') {
           ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = t
+          actions.setTab('logistics')
+        }
+      }
+      if (act === 'workrole') {
+        const f = (el as HTMLElement).dataset.filter as WorkRoleFilter
+        if (f === 'all' || f === 'warrior' || f === 'mage' || f === 'priest') {
+          ;(window as unknown as { __workRoleFilter?: WorkRoleFilter }).__workRoleFilter = f
           actions.setTab('logistics')
         }
       }
