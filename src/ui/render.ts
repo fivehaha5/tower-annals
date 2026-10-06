@@ -589,7 +589,7 @@ function towerView(state: GameState): string {
           })
           .join('')}
       </div>
-      <div class="muted" style="margin-top:6px">隊伍輸出 ${formatNum(teamCp)}（含出戰技能）· ${compareHint}</div>
+      <div class="muted" style="margin-top:6px">隊伍輸出 ${formatNum(teamCp)}（暴走前）· ${compareHint}</div>
       <div class="bar shield" data-bar="team-shield" data-pct="${pctNum(b?.teamShield ?? 0, b?.teamMaxShield ?? 1).toFixed(1)}"><i></i></div>
       <div class="bar team" data-bar="team-hp" data-pct="${pctNum(b?.teamHp ?? 0, b?.teamMaxHp ?? 1).toFixed(1)}"><i></i></div>`
 

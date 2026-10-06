@@ -27,8 +27,8 @@ function defenseFactorFromSeed(defenseSeed: number, mechanic?: BossMechanicId): 
 }
 
 /**
- * 敵方顯示戰力：偏「有效耐久」（血盾×減傷），與隊伍輸出戰力對照。
- * defenseSeed 用層數難度種子，勿用顯示戰力本身。
+ * 敵方對照戰力：打光血盾所需的「減傷前傷害池」（ehp×減傷）。
+ * 與隊伍輸出（暴走前預期傷害池）同一單位；defenseSeed 勿用顯示戰力。
  */
 export function enemyDisplayPower(
   stats: Pick<Stats, 'hp' | 'shield' | 'atk'>,
@@ -37,10 +37,8 @@ export function enemyDisplayPower(
 ): number {
   const ehp = Math.max(1, stats.hp + stats.shield)
   const defF = defenseFactorFromSeed(defenseSeed, mechanic)
-  return Math.max(
-    1,
-    Math.floor((ehp * defF) / ENEMY_COMPARE_EHP_DIVISOR + stats.atk * ENEMY_COMPARE_ATK_WEIGHT),
-  )
+  const tankPool = (ehp * defF) / Math.max(1e-6, ENEMY_COMPARE_EHP_DIVISOR)
+  return Math.max(1, Math.floor(tankPool + stats.atk * ENEMY_COMPARE_ATK_WEIGHT))
 }
 
 /** 高難度種子額外生命（log soft），讓數字高的怪真的更肉 */

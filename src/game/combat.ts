@@ -48,14 +48,10 @@ import {
   ENEMY_DEF_ANCHOR_BONUS,
   ENEMY_DEF_ANCHOR_POWER,
   EQUIP_LEVEL_SCALE,
+  ENEMY_COMPARE_EHP_DIVISOR,
   FRONTIER_PUSH_MULT,
   SINGLE_SKILL_FOCUS,
-  SKILL_CP_WEIGHT,
   SKILL_KIND_COOLDOWN_TURNS,
-  TEAM_CP_ATK,
-  TEAM_CP_DEF,
-  TEAM_CP_HP,
-  TEAM_CP_SHIELD,
   UNIQUE_SKILL_BONUS,
   boostWorkBonus,
   skillLevelPowerBonus,
@@ -230,49 +226,60 @@ function skillStrength(sk: OwnedSkill | undefined, enhanceLevel?: number): numbe
   return (1 + skillLevelPowerBonus(lv)) * rarityMult(sk.rarity) * uniqueBonus
 }
 
-/** 隊伍輸出戰力：偏攻擊，與敵方耐久對照戰力分開算 */
-export function combatPowerFromStats(s: Stats): number {
-  return Math.floor(
-    s.hp * TEAM_CP_HP + s.shield * TEAM_CP_SHIELD + s.atk * TEAM_CP_ATK + s.def * TEAM_CP_DEF,
-  )
-}
-
-/** 出戰技能爆發倍率估價（含等級／稀有度／單技能補償） */
-export function roleSkillBurstScore(state: GameState, role: Role): number {
+/**
+ * 單次出手的可持續傷害係數（對齊戰鬥：非攻擊技 ×0.55、技能輪轉平均，非峰值爆發）。
+ * CD=2 且多技能時約均勻輪替。
+ */
+export function roleSustainDamageCoeff(state: GameState, role: Role): number {
   const castOrder = state.skillCastOrder?.length
     ? state.skillCastOrder
     : defaultSkillCastOrder()
-  let best = BASIC_ATTACK_POWER
+  const relic = relicEffects(state, role)
+  const skillPow = 1 + (relic?.skillPower ?? 0)
+  const coeffs: number[] = []
   for (const kind of castOrder) {
     const owned = getEquippedSkill(state, role, kind)
     if (!owned) continue
     const skill = SKILL_MAP[owned.skillId]
     if (!skill) continue
-    const str = skillStrength(owned, getSkillEnhanceLevel(state, role, kind)) * SINGLE_SKILL_FOCUS
-    const kindFactor = kind === 'attack' ? 1 : kind === 'support' ? 0.65 : 0.55
-    const score = Math.max(skill.power, 0.35) * str * kindFactor
-    if (score > best) best = score
+    const str =
+      skillStrength(owned, getSkillEnhanceLevel(state, role, kind)) * skillPow * SINGLE_SKILL_FOCUS
+    // 與 resolvePartyAction 一致：攻擊技全額，輔助／防禦技傷害 ×0.55
+    const kindDmg = kind === 'attack' ? 1 : 0.55
+    let coeff = Math.max(0, skill.power) * str * kindDmg
+    const trueV = skill.effects?.find((e) => e.id === 'trueDamage')?.value ?? 0
+    if (trueV > 0) coeff += Math.max(0, skill.power) * str * trueV
+    coeffs.push(coeff)
   }
-  return best
+  if (!coeffs.length) return BASIC_ATTACK_POWER
+  return coeffs.reduce((a, b) => a + b, 0) / coeffs.length
+}
+
+/** @deprecated 改用 roleSustainDamageCoeff；保留給除錯／舊呼叫 */
+export function roleSkillBurstScore(state: GameState, role: Role): number {
+  return roleSustainDamageCoeff(state, role)
+}
+
+/** @deprecated 隊伍戰力已不走面板加權 */
+export function combatPowerFromStats(s: Stats): number {
+  return Math.floor(s.atk)
 }
 
 /**
- * 隊伍戰力：角色面板（偏輸出）+ 出戰技能爆發。
- * 與敵方「耐久對照戰力」用不同曲線，方便判斷能不能打。
+ * 隊伍輸出戰力：暴走前回合內、預期造成的「減傷前傷害池」。
+ * 與敵方對照（有效血盾×減傷）同一單位 → 比值≈1 約略打得完。
  */
 export function teamPower(state: GameState): number {
-  return getTeam(state).reduce((sum, ch) => {
+  const offense = getTeam(state).reduce((sum, ch) => {
     const def = CHAR_MAP[ch.defId]
     if (!def) return sum
     const s = calcCharStats(state, ch)
-    const base = combatPowerFromStats(s)
-    const burst = roleSkillBurstScore(state, def.role)
-    // 普攻基準 ≈0.7；高出的部分視為技能對有效輸出／戰力的貢獻
-    const skillCp = Math.floor(
-      s.atk * TEAM_CP_ATK * Math.max(0, burst - BASIC_ATTACK_POWER) * SKILL_CP_WEIGHT,
-    )
-    return sum + base + skillCp
+    const coeff = roleSustainDamageCoeff(state, def.role)
+    return sum + s.atk * coeff
   }, 0)
+  // 每完整回合三人各出手一次
+  const pool = offense * BERSERK_AFTER_ROUNDS
+  return Math.max(1, Math.floor(pool / Math.max(1, ENEMY_COMPARE_EHP_DIVISOR)))
 }
 
 /**
@@ -291,13 +298,13 @@ export function enemyDefenseFactor(
   return factor
 }
 
-/** 隊伍輸出戰力 vs 敵方對照戰力：優勢／可打／吃力／建議降層 */
+/** 隊伍輸出 vs 敵方對照：比值≈1 約在暴走前清掉 */
 export function fightCompareHint(teamCp: number, enemyCompareCp: number): string {
   const e = Math.max(1, enemyCompareCp)
   const r = teamCp / e
-  if (r >= 1.15) return '優勢'
-  if (r >= 0.85) return '可打'
-  if (r >= 0.7) return '吃力'
+  if (r >= 1.25) return '優勢'
+  if (r >= 1.0) return '可打'
+  if (r >= 0.75) return '吃力'
   return '建議降層'
 }
 
