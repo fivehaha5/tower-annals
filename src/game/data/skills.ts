@@ -4,15 +4,51 @@ export const SKILLS: SkillDef[] = [
   // 基礎
   { id: 'w_atk', name: '裂空斬', role: 'warrior', kind: 'attack', element: '火', power: 1.25, shieldPower: 0, healPower: 0, desc: '高倍率單體斬擊' },
   { id: 'w_def', name: '鐵壁', role: 'warrior', kind: 'defense', element: '雷', power: 0.25, shieldPower: 1.4, healPower: 0, desc: '大幅抬盾並輕攻' },
-  { id: 'w_sup', name: '破軍號令', role: 'warrior', kind: 'support', element: '光', power: 0.55, shieldPower: 0.4, healPower: 0.25, desc: '攻盾療三向輔助' },
+  {
+    id: 'w_sup',
+    name: '破軍號令',
+    role: 'warrior',
+    kind: 'support',
+    element: '光',
+    power: 0.75,
+    shieldPower: 0.45,
+    healPower: 0,
+    desc: '戰吼破陣：中攻補盾並穿敵護盾',
+    effects: [{ id: 'pierceShield', value: 0.22 }],
+  },
 
   { id: 'm_atk', name: '熔晶爆', role: 'mage', kind: 'attack', element: '火', power: 1.45, shieldPower: 0, healPower: 0, desc: '高倍率火爆擊' },
   { id: 'm_def', name: '霜核屏障', role: 'mage', kind: 'defense', element: '水', power: 0.2, shieldPower: 1.25, healPower: 0, desc: '水屬護盾屏障' },
-  { id: 'm_sup', name: '異界雷弧', role: 'mage', kind: 'support', element: '雷', power: 0.7, shieldPower: 0.25, healPower: 0.2, desc: '雷弧壓制並補盾療' },
+  {
+    id: 'm_sup',
+    name: '異界雷弧',
+    role: 'mage',
+    kind: 'support',
+    element: '雷',
+    power: 0.88,
+    shieldPower: 0.12,
+    healPower: 0,
+    desc: '雷弧壓制：高輔助傷並切斷敵人回血',
+    effects: [{ id: 'antiHealCut', value: 1 }],
+  },
 
   { id: 'p_atk', name: '淨罪', role: 'priest', kind: 'attack', element: '光', power: 1.05, shieldPower: 0, healPower: 0.25, desc: '光擊並附帶治療' },
   { id: 'p_def', name: '光帷', role: 'priest', kind: 'defense', element: '光', power: 0.15, shieldPower: 1.6, healPower: 0.35, desc: '高盾＋治療守勢' },
-  { id: 'p_sup', name: '聖律回響', role: 'priest', kind: 'support', element: '光', power: 0.25, shieldPower: 0.5, healPower: 1.35, desc: '強力群體治療' },
+  {
+    id: 'p_sup',
+    name: '聖律回響',
+    role: 'priest',
+    kind: 'support',
+    element: '光',
+    power: 0.12,
+    shieldPower: 0.35,
+    healPower: 1.5,
+    desc: '主療續航：強力治療，殘血加療，過量轉盾',
+    effects: [
+      { id: 'balanceHeal', value: 0.28 },
+      { id: 'overhealToShield', value: 0.3 },
+    ],
+  },
 
   // 王塔獨特（機制技）
   {
