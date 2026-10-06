@@ -956,6 +956,27 @@ export function boostCharacter(uidStr: string): string | null {
   return null
 }
 
+/**
+ * 單隻一鍵增效：用多餘同名卡連續增效到不夠為止（至少留 1 張）。
+ * 回傳實際增效次數；0 表示無法再增效。
+ */
+export function boostCharacterMax(uidStr: string): { times: number; boost?: number; error?: string } {
+  const ch = getOwned(state, uidStr)
+  if (!ch) return { times: 0, error: '找不到角色' }
+  let times = 0
+  for (;;) {
+    const cost = charBoostCardCost(ch.boost ?? 0)
+    const stack = Math.max(1, ch.count ?? 1)
+    if (stack < cost + 1) break
+    ch.count -= cost
+    ch.boost += 1
+    times += 1
+  }
+  if (times > 0) emit()
+  else return { times: 0, error: `同名卡不足（堆疊 x${Math.max(1, ch.count ?? 1)}）` }
+  return { times, boost: ch.boost }
+}
+
 export function upgradeSkill(skillUid: string): string | null {
   const sk = getSkillItem(state, skillUid)
   if (!sk) return '找不到技能'
