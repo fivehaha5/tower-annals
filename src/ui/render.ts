@@ -1776,8 +1776,8 @@ function logisticsDetailView(state: GameState, job: WorkJob): string {
       <p class="muted">${WORK_DESC[job]} · ${resMeta?.name ?? ''} 庫存 ${formatNum(state.resources[resKey])}</p>
       <p class="muted">在職 ${workers.length}/${stationCap} · 超出人數不產物（依增效／等級優先）</p>
       <div class="btn-row loadout-tabs work-pick-tabs" style="margin-top:10px">
-        <button class="btn ${tab === 'idle' ? 'primary' : ''}" data-act="workpick" data-tab="idle">未指派 ${idle.length}</button>
-        <button class="btn ${tab === 'assigned' ? 'primary' : ''}" data-act="workpick" data-tab="assigned">已指派 ${assignedCount}</button>
+        <button class="btn ${tab === 'idle' ? 'primary' : ''}" data-act="workpick" data-pick="idle">未指派 ${idle.length}</button>
+        <button class="btn ${tab === 'assigned' ? 'primary' : ''}" data-act="workpick" data-pick="assigned">已指派 ${assignedCount}</button>
       </div>
     </div>
     <div class="panel">
@@ -2358,9 +2358,11 @@ function bind(root: HTMLElement) {
   bindPressFeedback(phone)
   bindSwipeTabs(phone)
 
-  phone.querySelectorAll('[data-tab]').forEach((el) => {
+  // 只綁底部導航，避免內容區 data-tab（養成子頁等）誤觸 setTab → 落到設置
+  phone.querySelectorAll('.nav [data-tab]').forEach((el) => {
     el.addEventListener('click', () => {
       const tab = (el as HTMLElement).dataset.tab as GameState['tab']
+      if (!TAB_ORDER.includes(tab)) return
       if (tab === 'train') {
         ;(window as unknown as { __trainPage?: TrainPage }).__trainPage = 'team'
       }
@@ -2672,9 +2674,10 @@ function bind(root: HTMLElement) {
         actions.setTab('logistics')
       }
       if (act === 'workpick') {
-        const t = (el as HTMLElement).dataset.tab as WorkPickTab
+        const t = ((el as HTMLElement).dataset.pick ?? (el as HTMLElement).dataset.tab) as WorkPickTab
         if (t === 'idle' || t === 'assigned') {
           ;(window as unknown as { __workPickTab?: WorkPickTab }).__workPickTab = t
+          actions.setTab('logistics')
         }
       }
       if (act === 'work' && id) {
