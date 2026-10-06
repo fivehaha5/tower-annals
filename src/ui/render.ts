@@ -18,6 +18,7 @@ import {
   calcCharStats,
   createBattle,
   farmFloorOf,
+  fightCompareHint,
   fightingUids,
   getCharEnhanceLevel,
   getEquipEnhanceLevel,
@@ -28,7 +29,7 @@ import {
   teamPower,
   workBoostMult,
 } from '../game/combat'
-import { allMobPortraitUrls, buildEnemy } from '../game/enemies'
+import { allMobPortraitUrls, buildEnemy, enemyDisplayPower } from '../game/enemies'
 import {
   GAME_NAME,
   GODKING_UNLOCK,
@@ -455,14 +456,27 @@ function floorSelectPanel(state: GameState): string {
       : ''
   const atTip = farm >= max
   const tipHint = atTip ? ' · 前沿加壓' : ' · 降層較穩'
-  const shownPower = Math.floor(
-    buildEnemy(mode, farm).power * (atTip && (mode === 'main' || mode === 'blueprint' || mode === 'skill' || mode === 'hunt') ? FRONTIER_PUSH_MULT : 1),
-  )
+  const tipEnemy = buildEnemy(mode, farm)
+  const tipFrontier =
+    atTip &&
+    FRONTIER_PUSH_MULT > 1 &&
+    (mode === 'main' || mode === 'blueprint' || mode === 'skill' || mode === 'hunt')
+  const shownPower = tipFrontier
+    ? enemyDisplayPower(
+        {
+          hp: Math.max(1, Math.floor(tipEnemy.hp * FRONTIER_PUSH_MULT)),
+          shield: Math.floor(tipEnemy.shield * FRONTIER_PUSH_MULT),
+          atk: Math.max(1, Math.floor(tipEnemy.atk * FRONTIER_PUSH_MULT)),
+        },
+        Math.max(1, Math.floor((tipEnemy.defenseSeed ?? tipEnemy.power) * FRONTIER_PUSH_MULT)),
+        tipEnemy.mechanic,
+      )
+    : tipEnemy.power
   return `<div class="panel compact-panel">
     <div class="section-head">
       <div>
         <div class="section-title">掛機 · ${formatNum(farm)}F · ${push === 'push' ? '沖層' : '原地'}</div>
-        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(shownPower)}${huntHint}${skillCd}${tipHint}${berserking ? ' · 暴走中' : ''}</div>
+        <div class="muted">解鎖 ${formatNum(max)} · 對照 ${formatNum(shownPower)}${huntHint}${skillCd}${tipHint}${berserking ? ' · 暴走中' : ''}</div>
       </div>
       ${foldBtn('__foldFarm', '收起設定', '展開設定')}
     </div>
@@ -545,6 +559,8 @@ function towerView(state: GameState): string {
   const enemyName = b?.enemy.name
     ? nameSpan(b.enemy.name, rarityLabel)
     : '無名殘影'
+  const teamCp = teamPower(state)
+  const compareHint = fightCompareHint(teamCp, b?.enemy.power ?? 0)
 
   const teamBlock = `
       <div class="team-row compact-team">
@@ -573,7 +589,7 @@ function towerView(state: GameState): string {
           })
           .join('')}
       </div>
-      <div class="muted" style="margin-top:6px">隊伍戰力 ${formatNum(teamPower(state))}（含出戰技能）</div>
+      <div class="muted" style="margin-top:6px">隊伍輸出 ${formatNum(teamCp)}（含出戰技能）· ${compareHint}</div>
       <div class="bar shield" data-bar="team-shield" data-pct="${pctNum(b?.teamShield ?? 0, b?.teamMaxShield ?? 1).toFixed(1)}"><i></i></div>
       <div class="bar team" data-bar="team-hp" data-pct="${pctNum(b?.teamHp ?? 0, b?.teamMaxHp ?? 1).toFixed(1)}"><i></i></div>`
 
@@ -614,7 +630,7 @@ function towerView(state: GameState): string {
       <div class="boss-stage-scrim"></div>
       <div class="boss-stage-meta">
         <div class="enemy-name">${enemyName}</div>
-        <div class="muted">${b?.enemy.element ?? '-'} · 戰力 ${formatNum(b?.enemy.power ?? 0)} · ${formatNum(floor)}/${formatNum(maxFloor)}F</div>
+        <div class="muted">${b?.enemy.element ?? '-'} · 對照 ${formatNum(b?.enemy.power ?? 0)} · ${formatNum(floor)}/${formatNum(maxFloor)}F</div>
         <div class="muted${b?.berserk ? ' berserk-hot' : ''}" data-battle-round>${b?.berserk ? `回合 ${(b.roundsElapsed ?? 0) + 1} · 暴走中` : `回合 ${(b?.roundsElapsed ?? 0) + 1} · 暴走≥${BERSERK_AFTER_ROUNDS}`}</div>
         <div class="muted" data-battle-log>${b?.log ?? '準備戰鬥…'}</div>
         <div class="bar shield" data-bar="enemy-shield" data-pct="${pctNum(b?.enemy.shield ?? 0, b?.enemy.maxShield ?? 1).toFixed(1)}"><i></i></div>
@@ -633,7 +649,7 @@ function towerView(state: GameState): string {
         }
         <div class="battle-enemy-meta">
           <div class="enemy-name">${enemyName}</div>
-          <div class="muted">${b?.enemy.element ?? '-'} · 戰力 ${formatNum(b?.enemy.power ?? 0)} · ${formatNum(floor)}/${formatNum(maxFloor)}F</div>
+          <div class="muted">${b?.enemy.element ?? '-'} · 對照 ${formatNum(b?.enemy.power ?? 0)} · ${formatNum(floor)}/${formatNum(maxFloor)}F</div>
           <div class="muted${b?.berserk ? ' berserk-hot' : ''}" data-battle-round>${b?.berserk ? `回合 ${(b.roundsElapsed ?? 0) + 1} · 暴走中` : `回合 ${(b?.roundsElapsed ?? 0) + 1} · 暴走≥${BERSERK_AFTER_ROUNDS}`}</div>
           <div class="muted" data-battle-log>${b?.log ?? '準備戰鬥…'}</div>
           <div class="bar shield" data-bar="enemy-shield" data-pct="${pctNum(b?.enemy.shield ?? 0, b?.enemy.maxShield ?? 1).toFixed(1)}"><i></i></div>
@@ -1184,7 +1200,7 @@ function trainTeamView(state: GameState): string {
       <div class="section-head">
         <div>
           <div class="section-title">養成</div>
-          <div class="muted">戰力 ${formatNum(teamPower(state))} · 隊長 ${ROLE_LABEL[state.captainRole]}</div>
+          <div class="muted">隊伍輸出 ${formatNum(teamPower(state))} · 隊長 ${ROLE_LABEL[state.captainRole]}</div>
         </div>
         <div class="btn-row">
           <button class="btn" data-act="trainpage" data-page="lounge">休息室</button>
