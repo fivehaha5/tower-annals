@@ -94,12 +94,13 @@ export function equipStatLine(bonus: Partial<Stats>): string {
   return bits.length ? bits.join(' ') : '無屬性'
 }
 
-/** 含強化等級與品質倍率後的裝備實戰數值 */
-export function ownedEquipStatLine(owned: OwnedEquip): string {
+/** 含強化等級與品質倍率後的裝備實戰數值（enhanceLevel 缺省則用本體舊 level） */
+export function ownedEquipStatLine(owned: OwnedEquip, enhanceLevel?: number): string {
   const p = parseEquipDefId(owned.defId)
   if (!p) return '—'
   const def = makeEquipDef(p.role, p.slot, p.tier)
-  const scale = (1 + owned.level * EQUIP_LEVEL_SCALE) * rarityMult(owned.rarity)
+  const lv = enhanceLevel ?? owned.level ?? 0
+  const scale = (1 + lv * EQUIP_LEVEL_SCALE) * rarityMult(owned.rarity)
   const bonus: Partial<Stats> = {
     hp: Math.floor((def.bonus.hp ?? 0) * scale),
     atk: Math.floor((def.bonus.atk ?? 0) * scale),

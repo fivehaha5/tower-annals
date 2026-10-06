@@ -9,6 +9,7 @@ import type {
   BattleFloater,
   BattleSnapshot,
   Element,
+  EquipSlot,
   GameState,
   LootDrop,
   OwnedCharacter,
@@ -84,6 +85,56 @@ export function getEquippedSkill(
   return getSkillItem(state, state.loadouts?.[role]?.skills?.[kind])
 }
 
+/** 出戰格角色強化等級（換人保留）；未出戰則用角色本體等級 */
+export function getCharEnhanceLevel(state: GameState, ch: OwnedCharacter): number {
+  const role = CHAR_MAP[ch.defId]?.role
+  if (!role) return Math.max(1, ch.level ?? 1)
+  const lo = state.loadouts?.[role]
+  if (lo?.characterUid === ch.uid) {
+    return Math.max(1, lo.charLevel ?? ch.level ?? 1)
+  }
+  return Math.max(1, ch.level ?? 1)
+}
+
+/** 出戰格部位裝備強化等級（換裝保留） */
+export function getEquipEnhanceLevel(state: GameState, role: Role, slot: EquipSlot): number {
+  const lo = state.loadouts?.[role]
+  return Math.max(0, lo?.equipLevels?.[slot] ?? 0)
+}
+
+/** 出戰格技能強化等級（換技保留） */
+export function getSkillEnhanceLevel(state: GameState, role: Role, kind: SkillKind): number {
+  const lo = state.loadouts?.[role]
+  return Math.max(1, lo?.skillLevels?.[kind] ?? 1)
+}
+
+export function findRoleWearingEquip(
+  state: GameState,
+  equipUid: string,
+): { role: Role; slot: EquipSlot } | null {
+  for (const role of ROLES) {
+    const equips = state.loadouts?.[role]?.equips ?? {}
+    for (const slot of EQUIP_SLOTS) {
+      if (equips[slot] === equipUid) return { role, slot }
+    }
+  }
+  return null
+}
+
+export function findRoleWearingSkill(
+  state: GameState,
+  skillUid: string,
+): { role: Role; kind: SkillKind } | null {
+  const kinds: SkillKind[] = ['attack', 'defense', 'support']
+  for (const role of ROLES) {
+    const skills = state.loadouts?.[role]?.skills ?? {}
+    for (const kind of kinds) {
+      if (skills[kind] === skillUid) return { role, kind }
+    }
+  }
+  return null
+}
+
 export function getTeam(state: GameState): OwnedCharacter[] {
   const order = state.formation?.length ? state.formation : defaultFormation()
   return order
@@ -116,12 +167,13 @@ export function calcCharStats(state: GameState, ch: OwnedCharacter): Stats {
   const role = def.role
   const loadout = state.loadouts?.[role]
   const wearing = loadout?.characterUid === ch.uid
+  const charLv = getCharEnhanceLevel(state, ch)
 
   let s = addStats(def.base, {
-    hp: def.growth.hp * (ch.level - 1),
-    atk: def.growth.atk * (ch.level - 1),
-    def: def.growth.def * (ch.level - 1),
-    shield: def.growth.shield * (ch.level - 1),
+    hp: def.growth.hp * (charLv - 1),
+    atk: def.growth.atk * (charLv - 1),
+    def: def.growth.def * (charLv - 1),
+    shield: def.growth.shield * (charLv - 1),
   })
   s = scaleStats(s, rarityMult(ch.rarity))
   s = scaleStats(s, ascendMult(ch.ascend ?? 0))
@@ -132,7 +184,7 @@ export function calcCharStats(state: GameState, ch: OwnedCharacter): Stats {
     if (combatBoost > 0) s = scaleStats(s, 1 + combatBoost)
   }
 
-  // 裝備僅在出戰格且由該角色出戰時生效
+  // 裝備僅在出戰格且由該角色出戰時生效；強化等級綁部位格
   if (wearing && loadout) {
     for (const slot of EQUIP_SLOTS) {
       const eu = loadout.equips[slot]
@@ -143,7 +195,8 @@ export function calcCharStats(state: GameState, ch: OwnedCharacter): Stats {
       if (!parsed || parsed.role !== role) continue
       if (parsed.tier > maxEquipTierForRebirth(ch.rebirth ?? 0)) continue
       const equip = makeEquipDef(role, parsed.slot, parsed.tier)
-      const lvlBonus = 1 + owned.level * EQUIP_LEVEL_SCALE
+      const enhance = getEquipEnhanceLevel(state, role, slot)
+      const lvlBonus = 1 + enhance * EQUIP_LEVEL_SCALE
       const rBonus = rarityMult(owned.rarity)
       s = addStats(s, {
         hp: Math.floor((equip.bonus.hp ?? 0) * lvlBonus * rBonus),
@@ -166,10 +219,11 @@ export function calcCharStats(state: GameState, ch: OwnedCharacter): Stats {
   return scaleStats(s, dexBonus)
 }
 
-function skillStrength(sk: OwnedSkill | undefined): number {
+function skillStrength(sk: OwnedSkill | undefined, enhanceLevel?: number): number {
   if (!sk) return 0.35
+  const lv = Math.max(1, enhanceLevel ?? sk.level ?? 1)
   const uniqueBonus = SKILL_MAP[sk.skillId]?.unique ? UNIQUE_SKILL_BONUS : 1
-  return (1 + skillLevelPowerBonus(sk.level)) * rarityMult(sk.rarity) * uniqueBonus
+  return (1 + skillLevelPowerBonus(lv)) * rarityMult(sk.rarity) * uniqueBonus
 }
 
 /** 與敵方顯示戰力共用：血／盾／攻／防加權 */
@@ -188,7 +242,7 @@ export function roleSkillBurstScore(state: GameState, role: Role): number {
     if (!owned) continue
     const skill = SKILL_MAP[owned.skillId]
     if (!skill) continue
-    const str = skillStrength(owned) * SINGLE_SKILL_FOCUS
+    const str = skillStrength(owned, getSkillEnhanceLevel(state, role, kind)) * SINGLE_SKILL_FOCUS
     const kindFactor = kind === 'attack' ? 1 : kind === 'support' ? 0.65 : 0.55
     const score = Math.max(skill.power, 0.35) * str * kindFactor
     if (score > best) best = score
@@ -463,7 +517,7 @@ function resolvePartyAction(
     const { kind, owned } = picked
     const skill = SKILL_MAP[owned.skillId]!
     actionLabel = skill.name
-    const str = skillStrength(owned) * skillPow * SINGLE_SKILL_FOCUS
+    const str = skillStrength(owned, getSkillEnhanceLevel(state, role, kind)) * skillPow * SINGLE_SKILL_FOCUS
     let mult = elementMult(skill.element as Element, b.enemy.element)
     if (hasEffect(skill.id, 'fogBreak')) fogBreak = true
     if (hasEffect(skill.id, 'trueDamage')) {
