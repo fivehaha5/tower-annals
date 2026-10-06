@@ -1418,6 +1418,42 @@ body {
   padding: 8px 4px;
 }
 
+.equip-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.equip-slot-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  min-height: 48px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.equip-slot-chip .esc-name {
+  font-weight: 600;
+}
+
+.equip-slot-chip .esc-meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.equip-slot-chip.primary .esc-meta {
+  color: rgba(232, 236, 245, 0.85);
+}
+
+@media (max-width: 360px) {
+  .equip-slot-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 .row-item {
   display: flex;
   flex-direction: column;

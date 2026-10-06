@@ -839,6 +839,15 @@ function roleSkillBlock(state: GameState, role: Role): string {
     </div></div>`
 }
 
+function equipSlotFocus(role: Role): EquipSlot {
+  const win = window as unknown as { __equipSlotFocus?: Partial<Record<Role, EquipSlot>> }
+  win.__equipSlotFocus ??= {}
+  const cur = win.__equipSlotFocus[role]
+  if (cur && EQUIP_SLOTS.includes(cur)) return cur
+  win.__equipSlotFocus[role] = 'weapon'
+  return 'weapon'
+}
+
 function roleEquipBlock(state: GameState, role: Role): string {
   const lo = state.loadouts[role]
   const ch = getRoleCharacter(state, role)
@@ -846,50 +855,69 @@ function roleEquipBlock(state: GameState, role: Role): string {
     const p = parseEquipDefId(eq.defId)
     return p && p.role === role
   })
-  const stacks = stackEquipsByTier(list)
   const wornSlots = lo.equips ?? {}
-  const bagOpen = uiFlag('__foldEquipBag')
+  const focus = equipSlotFocus(role)
+  const slotBags = EQUIP_SLOTS.map((slot) => ({
+    slot,
+    count: list.filter((eq) => parseEquipDefId(eq.defId)?.slot === slot).length,
+  }))
+  const slotStacks = stackEquipsByTier(list.filter((eq) => parseEquipDefId(eq.defId)?.slot === focus))
+  const wornUid = wornSlots[focus]
+  const wornEq = wornUid ? state.equips.find((e) => e.uid === wornUid) : undefined
+  const wornParsed = wornEq ? parseEquipDefId(wornEq.defId) : null
+
+  const slotChips = EQUIP_SLOTS.map((slot) => {
+    const uidEq = wornSlots[slot]
+    const eq = uidEq ? state.equips.find((e) => e.uid === uidEq) : undefined
+    const p = eq ? parseEquipDefId(eq.defId) : null
+    const bagN = slotBags.find((s) => s.slot === slot)?.count ?? 0
+    const tip = p && eq ? `T${p.tier} ${eq.rarity} +${eq.level}` : bagN ? `庫存 ${bagN}` : '空'
+    return `<button class="btn equip-slot-chip ${focus === slot ? 'primary' : ''}" data-act="equipslot" data-role="${role}" data-slot="${slot}" title="${escapeHtml(tip)}">
+      <span class="esc-name">${EQUIP_SLOT_LABEL[slot]}</span>
+      <span class="esc-meta">${p ? `T${p.tier}` : '空'} · ${bagN}</span>
+    </button>`
+  }).join('')
+
+  const wornBlock = wornEq && wornParsed
+    ? `<div class="row-item worn-equip" style="margin-top:8px">
+        <div class="row-main">目前：T${wornParsed.tier} · ${raritySpan(wornEq.rarity)} +${wornEq.level}</div>
+        <div class="sub">${ownedEquipStatLine(wornEq)}</div>
+        <div class="btn-row">
+          <button class="btn" data-act="equp" data-id="${wornEq.uid}">+Lv</button>
+          <button class="btn" data-act="unequip-role" data-role="${role}" data-slot="${focus}">卸下</button>
+        </div>
+      </div>`
+    : `<div class="muted" style="margin-top:8px">此部位尚未穿裝</div>`
+
+  const bagList =
+    slotStacks
+      .map((stack) => {
+        const eq = stack.items[0]
+        const p = parseEquipDefId(eq.defId)
+        if (!p) return ''
+        const worn = stack.items.some((it) => wornSlots[p.slot] === it.uid)
+        const wearLocked = !!ch && p.tier > maxEquipTierForRebirth(ch.rebirth ?? 0)
+        const needRebirth = rebirthRequiredForEquipTier(p.tier)
+        const count = stack.items.length
+        return `<div class="row-item">
+          <div class="row-main">T${p.tier} · ${raritySpan(stack.rarity)} ${equipLevelLabel(stack.items)}${count > 1 ? ` · x${count}` : ''}${worn ? ' · 穿' : ''}</div>
+          <div class="sub">${ownedEquipStatLine(eq)}</div>
+          <div class="btn-row">
+            <button class="btn" data-act="equp" data-id="${eq.uid}">+Lv</button>
+            <button class="btn ${worn ? '' : 'primary'}" data-act="wear-role" data-role="${role}" data-id="${eq.uid}" ${wearLocked || worn ? 'disabled' : ''}>${wearLocked ? `轉${needRebirth}` : worn ? '穿著中' : '裝上'}</button>
+          </div>
+        </div>`
+      })
+      .join('') || `<div class="muted">此部位尚無裝備（可至後勤打造）</div>`
+
   return `<div class="panel compact-panel">
     <div class="section-title">${ROLE_LABEL[role]} · 裝備</div>
-    <div class="muted" style="margin-bottom:6px">${EQUIP_SLOTS.map((slot) => {
-      const uidEq = wornSlots[slot]
-      if (!uidEq) return `${EQUIP_SLOT_LABEL[slot]}—`
-      const eq = state.equips.find((e) => e.uid === uidEq)
-      const p = eq ? parseEquipDefId(eq.defId) : null
-      if (!eq || !p) return EQUIP_SLOT_LABEL[slot]
-      return `${EQUIP_SLOT_LABEL[slot]}T${p.tier}(${ownedEquipStatLine(eq)})`
-    }).join(' · ')}</div>
-    <div class="section-head">
-      <div class="muted">背包 ${list.length} 件 · ${stacks.length} 組 · 品質排序</div>
-      ${foldBtn('__foldEquipBag', '收起背包', '展開背包')}
-    </div>
-    ${
-      bagOpen
-        ? `<div class="list tight-list" style="margin-top:6px">
-      ${
-        stacks
-          .map((stack) => {
-            const eq = stack.items[0]
-            const p = parseEquipDefId(eq.defId)
-            if (!p) return ''
-            const worn = stack.items.some((it) => wornSlots[p.slot] === it.uid)
-            const wearLocked = !!ch && p.tier > maxEquipTierForRebirth(ch.rebirth ?? 0)
-            const needRebirth = rebirthRequiredForEquipTier(p.tier)
-            const count = stack.items.length
-            return `<div class="row-item">
-              <div class="row-main">${EQUIP_SLOT_LABEL[p.slot]} T${p.tier} · ${raritySpan(stack.rarity)} ${equipLevelLabel(stack.items)}${count > 1 ? ` · x${count}` : ''}${worn ? ' · 穿' : ''}</div>
-              <div class="sub">${ownedEquipStatLine(eq)}</div>
-              <div class="btn-row">
-                <button class="btn" data-act="equp" data-id="${eq.uid}">+Lv</button>
-                <button class="btn" data-act="wear-role" data-role="${role}" data-id="${eq.uid}" ${wearLocked ? 'disabled' : ''}>${wearLocked ? `轉${needRebirth}` : '裝'}</button>
-              </div>
-            </div>`
-          })
-          .join('') || '<div class="muted">尚無裝備</div>'
-      }
-    </div>`
-        : ''
-    }
+    <div class="muted">先點部位，再從此部位清單裝／強化 · 背包共 ${list.length} 件</div>
+    <div class="equip-slot-grid" style="margin-top:8px">${slotChips}</div>
+    <div class="section-title" style="margin-top:12px">${EQUIP_SLOT_LABEL[focus]}</div>
+    ${wornBlock}
+    <div class="muted" style="margin-top:10px">${EQUIP_SLOT_LABEL[focus]}庫存 · ${slotStacks.length} 組 · 品質排序</div>
+    <div class="list tight-list" style="margin-top:6px">${bagList}</div>
   </div>`
 }
 
@@ -2499,6 +2527,22 @@ function bind(root: HTMLElement) {
         ;(window as unknown as { __trainLoadoutTab?: TrainLoadoutTab }).__trainLoadoutTab = (el as HTMLElement)
           .dataset.tab as TrainLoadoutTab
         actions.setTab('train')
+      }
+      if (act === 'equipslot') {
+        const r = (el as HTMLElement).dataset.role as Role
+        const slot = (el as HTMLElement).dataset.slot as EquipSlot
+        if (r && slot && EQUIP_SLOTS.includes(slot)) {
+          const win = window as unknown as { __equipSlotFocus?: Partial<Record<Role, EquipSlot>> }
+          win.__equipSlotFocus ??= {}
+          win.__equipSlotFocus[r] = slot
+          actions.setTab('train')
+        }
+      }
+      if (act === 'unequip-role') {
+        const r = (el as HTMLElement).dataset.role as Role
+        const slot = (el as HTMLElement).dataset.slot as EquipSlot
+        const err = actions.unequipOnRole(r, slot)
+        if (err) toast(root, err)
       }
       if (act === 'trainfocus-role') {
         const role = (el as HTMLElement).dataset.role as Role
