@@ -29,7 +29,7 @@ import {
   teamPower,
   workBoostMult,
 } from '../game/combat'
-import { allMobPortraitUrls, buildEnemy } from '../game/enemies'
+import { allMobPortraitUrls, buildEnemy, enemyDisplayPower } from '../game/enemies'
 import {
   GAME_NAME,
   GODKING_UNLOCK,
@@ -456,14 +456,27 @@ function floorSelectPanel(state: GameState): string {
       : ''
   const atTip = farm >= max
   const tipHint = atTip ? ' · 前沿加壓' : ' · 降層較穩'
-  const shownPower = Math.floor(
-    buildEnemy(mode, farm).power * (atTip && (mode === 'main' || mode === 'blueprint' || mode === 'skill' || mode === 'hunt') ? FRONTIER_PUSH_MULT : 1),
-  )
+  const tipEnemy = buildEnemy(mode, farm)
+  const tipFrontier =
+    atTip &&
+    FRONTIER_PUSH_MULT > 1 &&
+    (mode === 'main' || mode === 'blueprint' || mode === 'skill' || mode === 'hunt')
+  const shownPower = tipFrontier
+    ? enemyDisplayPower(
+        {
+          hp: Math.max(1, Math.floor(tipEnemy.hp * FRONTIER_PUSH_MULT)),
+          shield: Math.floor(tipEnemy.shield * FRONTIER_PUSH_MULT),
+          atk: Math.max(1, Math.floor(tipEnemy.atk * FRONTIER_PUSH_MULT)),
+        },
+        Math.max(1, Math.floor((tipEnemy.defenseSeed ?? tipEnemy.power) * FRONTIER_PUSH_MULT)),
+        tipEnemy.mechanic,
+      )
+    : tipEnemy.power
   return `<div class="panel compact-panel">
     <div class="section-head">
       <div>
         <div class="section-title">掛機 · ${formatNum(farm)}F · ${push === 'push' ? '沖層' : '原地'}</div>
-        <div class="muted">解鎖 ${formatNum(max)} · 戰力 ${formatNum(shownPower)}${huntHint}${skillCd}${tipHint}${berserking ? ' · 暴走中' : ''}</div>
+        <div class="muted">解鎖 ${formatNum(max)} · 對照 ${formatNum(shownPower)}${huntHint}${skillCd}${tipHint}${berserking ? ' · 暴走中' : ''}</div>
       </div>
       ${foldBtn('__foldFarm', '收起設定', '展開設定')}
     </div>
