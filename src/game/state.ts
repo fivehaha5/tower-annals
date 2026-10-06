@@ -71,6 +71,7 @@ import {
   GACHA_COST_HUNDRED,
   GACHA_COST_ONE,
   GACHA_COST_TEN,
+  GACHA_COST_THOUSAND,
   GODKING_UNLOCK,
   CHAR_LEVEL_MAX,
   FOREGROUND_OFFLINE_THRESHOLD_SEC,
@@ -1276,13 +1277,14 @@ function rollGachaPick() {
   return pick
 }
 
-export function gachaCost(times: 1 | 10 | 100): number {
+export function gachaCost(times: 1 | 10 | 100 | 1000): number {
   if (times === 10) return GACHA_COST_TEN
   if (times === 100) return GACHA_COST_HUNDRED
+  if (times === 1000) return GACHA_COST_THOUSAND
   return GACHA_COST_ONE
 }
 
-export function gachaPull(times: 1 | 10 | 100): OwnedCharacter[] | null {
+export function gachaPull(times: 1 | 10 | 100 | 1000): OwnedCharacter[] | null {
   const cost = gachaCost(times)
   if (state.resources.gold < cost) return null
   state.resources.gold -= cost

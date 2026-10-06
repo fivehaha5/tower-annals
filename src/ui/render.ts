@@ -42,6 +42,7 @@ import {
   GACHA_COST_HUNDRED,
   GACHA_COST_ONE,
   GACHA_COST_TEN,
+  GACHA_COST_THOUSAND,
   CHAR_LEVEL_MAX,
   SHOP_RATES,
   assetUrl,
@@ -1307,7 +1308,7 @@ function shopHubView(state: GameState): string {
           <div class="station-title">異塔招募</div>
           <div class="station-count">抽卡</div>
         </div>
-        <div class="station-desc">單抽／10連／100連 · ${GACHA_COST_ONE}/${GACHA_COST_TEN}/${GACHA_COST_HUNDRED} 金鑽</div>
+        <div class="station-desc">單抽／10／100／千抽 · ${GACHA_COST_ONE}/${GACHA_COST_TEN}/${GACHA_COST_HUNDRED}/${GACHA_COST_THOUSAND} 金鑽</div>
       </button>
       <button class="station-card tap-target" data-act="shoppage" data-page="resource">
         <div class="station-head">
@@ -1350,11 +1351,12 @@ function shopGachaView(state: GameState): string {
     <div class="panel">
       ${shopBackBtn()}
       <div class="section-title">異塔招募</div>
-      <p class="muted">36 名（每職 12：普通／史詩／傳奇）。單抽 ${GACHA_COST_ONE} · 10連 ${GACHA_COST_TEN} · 100連 ${GACHA_COST_HUNDRED} 金鑽。</p>
-      <div class="btn-row">
-        <button class="btn primary" data-act="gacha" data-times="1">單抽（${GACHA_COST_ONE}金鑽）</button>
-        <button class="btn primary" data-act="gacha" data-times="10">10連（${GACHA_COST_TEN}金鑽）</button>
-        <button class="btn primary" data-act="gacha" data-times="100">100連（${GACHA_COST_HUNDRED}金鑽）</button>
+      <p class="muted">36 名（每職 12：普通／史詩／傳奇）。單抽 ${GACHA_COST_ONE} · 10連 ${GACHA_COST_TEN} · 100連 ${GACHA_COST_HUNDRED} · 千抽 ${GACHA_COST_THOUSAND} 金鑽。</p>
+      <div class="btn-row" style="flex-wrap:wrap">
+        <button class="btn primary" data-act="gacha" data-times="1">單抽（${GACHA_COST_ONE}）</button>
+        <button class="btn primary" data-act="gacha" data-times="10">10連（${GACHA_COST_TEN}）</button>
+        <button class="btn primary" data-act="gacha" data-times="100">100連（${GACHA_COST_HUNDRED}）</button>
+        <button class="btn primary" data-act="gacha" data-times="1000">千抽（${GACHA_COST_THOUSAND}）</button>
       </div>
       <div class="muted" style="margin-top:8px">持有金鑽：${formatNum(state.resources.gold)}</div>
     </div>
@@ -2789,7 +2791,8 @@ function bind(root: HTMLElement) {
         if (err) toast(root, err)
       }
       if (act === 'gacha') {
-        const times = Number((el as HTMLElement).dataset.times ?? 1) as 1 | 10 | 100
+        const raw = Number((el as HTMLElement).dataset.times ?? 1)
+        const times = (raw === 10 || raw === 100 || raw === 1000 ? raw : 1) as 1 | 10 | 100 | 1000
         const got = actions.gachaPull(times)
         if (!got) toast(root, '金鑽不足')
         else if (times === 1) {
@@ -2798,7 +2801,13 @@ function bind(root: HTMLElement) {
           const t = root.querySelector('.toast')
           if (t) (t as HTMLElement).style.color = RARITY_COLOR[c.rarity]
         } else {
-          toast(root, `${times}連完成`)
+          const counts = new Map<string, number>()
+          for (const ch of got) {
+            const r = CHAR_MAP[ch.defId]?.rarity ?? '?'
+            counts.set(r, (counts.get(r) ?? 0) + 1)
+          }
+          const summary = [...counts.entries()].map(([r, n]) => `${r}${n}`).join(' · ')
+          toast(root, `${times}連完成 · ${summary}`)
         }
       }
       if (act === 'shop') {

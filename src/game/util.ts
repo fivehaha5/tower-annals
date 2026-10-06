@@ -135,6 +135,8 @@ export const SHOP_RATES: Partial<Record<keyof Resources, number>> = {
 export const GACHA_COST_ONE = 50
 export const GACHA_COST_TEN = 480
 export const GACHA_COST_HUNDRED = 4200
+/** 千抽：約 38／抽（相對百連再折一點） */
+export const GACHA_COST_THOUSAND = 38000
 
 /** 火 > 雷 > 水 > 火；光暗互克 */
 export function elementMult(atk: Element, def: Element): number {
