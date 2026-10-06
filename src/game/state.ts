@@ -1065,6 +1065,16 @@ export function equipOnRole(role: Role, equipUid: string): string | null {
   return null
 }
 
+/** 卸下職業出戰格某部位裝備 */
+export function unequipOnRole(role: Role, slot: EquipSlot): string | null {
+  if (!EQUIP_SLOTS.includes(slot)) return '無效部位'
+  if (!state.loadouts[role].equips[slot]) return '該部位未穿裝'
+  state.loadouts[role].equips[slot] = undefined
+  state.battle = createBattle(state)
+  emit()
+  return null
+}
+
 export function equipOnCharacter(charUid: string, equipUid: string): string | null {
   const ch = getOwned(state, charUid)
   if (!ch) return '找不到角色'
