@@ -266,7 +266,7 @@ export interface EnemySnapshot {
   isMiniBoss: boolean
   portrait?: string
   /**
-   * 顯示／對照用戰力（偏有效耐久，方便和隊伍輸出戰力比較）。
+   * 對照戰力：打光血盾所需減傷前傷害池（ehp×減傷），與隊伍輸出同單位。
    * 不直接等於減傷種子。
    */
   power: number

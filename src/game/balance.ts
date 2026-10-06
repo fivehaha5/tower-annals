@@ -165,22 +165,26 @@ export const ENEMY_DEF_ANCHOR_BONUS = 13
 export const CP_UNDERDOG_MITIGATION_EXP = 1.0
 
 /**
- * 敵方「對照戰力」：有效血盾 × 減傷 / 此係數 ≈ 與隊伍輸出戰力同一量級。
- * 調高 → 同層怪顯示戰力變低（看起來更好打）；調低則相反。
+ * 戰力對照（與戰鬥同單位：減傷前傷害池）：
+ * - 隊伍輸出 ≈ Σ(atk × 可持續傷害係數) × 暴走前回合數
+ * - 敵方對照 ≈ 有效血盾 × 減傷係數
+ * 兩者 ≈ 1 表示約在暴走前打得完。
+ *
+ * ENEMY_COMPARE_EHP_DIVISOR：兩邊同除，只縮顯示數字、不改比值。
  */
-export const ENEMY_COMPARE_EHP_DIVISOR = 7.2
+export const ENEMY_COMPARE_EHP_DIVISOR = 1
 
-/** 敵方對照戰力中的攻擊威脅權重（偏低，主看耐久） */
-export const ENEMY_COMPARE_ATK_WEIGHT = 3.5
+/** 敵方對照中的攻擊威脅（相對耐久池很小，僅微調） */
+export const ENEMY_COMPARE_ATK_WEIGHT = 8
 
-/** 技能對隊伍輸出戰力貢獻係數 */
-export const SKILL_CP_WEIGHT = 1.05
-
-/** 隊伍戰力面板權重（偏輸出，方便對照能不能打） */
-export const TEAM_CP_ATK = 12
-export const TEAM_CP_DEF = 1.4
-export const TEAM_CP_HP = 0.05
-export const TEAM_CP_SHIELD = 0.04
+/**
+ * @deprecated 舊面板權重；隊伍戰力已改可持续輸出估價，保留避免外部引用炸掉。
+ */
+export const SKILL_CP_WEIGHT = 1
+export const TEAM_CP_ATK = 1
+export const TEAM_CP_DEF = 0
+export const TEAM_CP_HP = 0
+export const TEAM_CP_SHIELD = 0
 
 /**
  * 掛在「已解鎖最高層」沖層時的敵方強化（血／盾／攻）。
