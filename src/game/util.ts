@@ -26,8 +26,8 @@ export const TICK_MS = 1000
 export const LOOT_COST_CRYSTAL = 12000
 /** 定向掉落基礎技能卡（再隨輪迴緩增） */
 export const LOOT_COST_SKILLBOOK_AIM = 25
-/** 離線結算上限（秒）— 收斂為 4 小時 */
-export const OFFLINE_CAP_SEC = 4 * 3600
+/** 離線結算上限（秒）— 12 小時 */
+export const OFFLINE_CAP_SEC = 12 * 3600
 /**
  * 前景一次落後達此秒數（含）→ 改走離線結算（含離線上限＋報告）。
  * 低於此：直接補滿落下的 tick，避免長 AFK 只補到幾秒。
