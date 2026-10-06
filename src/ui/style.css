@@ -16,10 +16,13 @@
   --priest: #3ecf8e;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  /* JS 會覆寫成 innerHeight；此處作無 JS／桌面後備 */
+  /* 狀態列／瀏海下方再留一點，避免頂列貼太緊 */
+  --safe-top-pad: 8px;
+  /* JS 會覆寫成穩定可視高度；此處作無 JS／桌面後備 */
   --app-height: 100vh;
   --app-height: 100dvh;
   --app-height: 100svh;
+  --app-offset-top: 0px;
   font-family: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -49,6 +52,8 @@ body {
   justify-content: center;
   align-items: stretch;
   background: #05060a;
+  /* 對齊 visualViewport 偏移，避免鍵盤／地址列造成整頁上飄 */
+  transform: translateY(var(--app-offset-top));
 }
 
 .phone {
@@ -72,7 +77,7 @@ body {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
-  padding: calc(10px + var(--safe-top)) 10px 6px;
+  padding: calc(10px + var(--safe-top) + var(--safe-top-pad)) 10px 6px;
   background: rgba(10, 12, 18, 0.92);
   border-bottom: 1px solid var(--line);
   z-index: 5;
@@ -82,7 +87,7 @@ body {
   display: flex;
   flex-wrap: nowrap;
   gap: 6px;
-  padding: calc(8px + var(--safe-top)) 10px 8px;
+  padding: calc(8px + var(--safe-top) + var(--safe-top-pad)) 10px 8px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
