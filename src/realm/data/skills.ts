@@ -1,0 +1,91 @@
+import type { SkillDef } from '../types'
+
+export const SKILLS: SkillDef[] = [
+  {
+    id: 'slash',
+    name: '裂風斬',
+    desc: '對敵人造成 140% 劍氣傷害。',
+    mpCost: 8,
+    power: 1.4,
+    unlockLevel: 1,
+    tag: 'slash',
+  },
+  {
+    id: 'guard_break',
+    name: '破軍一擊',
+    desc: '無視部分防禦，造成 180% 傷害。',
+    mpCost: 16,
+    power: 1.8,
+    unlockLevel: 8,
+    tag: 'slash',
+  },
+  {
+    id: 'iron_will',
+    name: '鐵壁意志',
+    desc: '立即回復自身 30% 最大生命。',
+    mpCost: 20,
+    power: 0,
+    heal: 0.3,
+    unlockLevel: 16,
+    tag: 'heal',
+  },
+  {
+    id: 'firebolt',
+    name: '炎牙彈',
+    desc: '發射火球，造成 150% 法術傷害。',
+    mpCost: 10,
+    power: 1.5,
+    unlockLevel: 1,
+    tag: 'magic',
+  },
+  {
+    id: 'frost_nova',
+    name: '霜環爆',
+    desc: '凍結並震爆，造成 200% 法術傷害。',
+    mpCost: 22,
+    power: 2.0,
+    unlockLevel: 8,
+    tag: 'magic',
+  },
+  {
+    id: 'arcane_surge',
+    name: '奧能潮湧',
+    desc: '釋放奧能，造成 260% 傷害。',
+    mpCost: 35,
+    power: 2.6,
+    unlockLevel: 16,
+    tag: 'magic',
+  },
+  {
+    id: 'aimed_shot',
+    name: '凝神一矢',
+    desc: '精准射擊，造成 145% 傷害並提高暴擊。',
+    mpCost: 9,
+    power: 1.45,
+    unlockLevel: 1,
+    tag: 'pierce',
+  },
+  {
+    id: 'poison_arrow',
+    name: '毒涎箭',
+    desc: '淬毒箭矢，造成 175% 傷害。',
+    mpCost: 15,
+    power: 1.75,
+    unlockLevel: 8,
+    tag: 'pierce',
+  },
+  {
+    id: 'shadow_step',
+    name: '影襲',
+    desc: '瞬間貼身連射，造成 230% 傷害。',
+    mpCost: 28,
+    power: 2.3,
+    unlockLevel: 16,
+    tag: 'pierce',
+  },
+]
+
+export const SKILL_MAP = Object.fromEntries(SKILLS.map((s) => [s.id, s])) as Record<
+  string,
+  SkillDef
+>

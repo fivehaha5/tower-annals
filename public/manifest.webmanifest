@@ -1,7 +1,7 @@
 {
-  "name": "異塔編年",
-  "short_name": "異塔編年",
-  "description": "賽博遺跡中的歷史長塔",
+  "name": "雙界入口",
+  "short_name": "雙界",
+  "description": "異塔編年與幻域征途——掛機爬塔與網遊冒險",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -1,12 +1,19 @@
-import './ui/style.css'
+import './realm-ui/style.css'
 import { startAutoUpdateChecks } from './appUpdate'
-import { bootState, saveLocal } from './game/save'
-import { applyOfflineOnBoot, gameTick, getState, subscribe } from './game/state'
-import { render } from './ui/render'
-import { TICK_MS } from './game/util'
+import { renderHub, renderRealm } from './realm-ui/render'
+import { bootRealm, getState as getRealmState, subscribe as subscribeRealm, tickAutoBattle } from './realm/state'
+import { saveRealm } from './realm/save'
+
+type AppMode = 'hub' | 'idle' | 'realm'
+
+const MODE_KEY = 'tower-annals-app-mode'
+const app = document.querySelector<HTMLElement>('#app')!
 
 /** 鍵盤未開時記住的穩定高度，避免 iOS 彈鍵盤把整頁壓成一條 */
 let stableAppHeight = 0
+let idleCleanup: (() => void) | null = null
+let realmCleanup: (() => void) | null = null
+let realmAutoTimer: number | null = null
 
 function isEditingInput(): boolean {
   const el = document.activeElement as HTMLElement | null
@@ -20,10 +27,6 @@ function isEditingInput(): boolean {
   return !!el.isContentEditable
 }
 
-/**
- * 以實際可視高度鎖定版面。
- * 輸入時不跟 visualViewport 縮水（否則會整 UI 擠到鍵盤上方、中間留黑）。
- */
 function syncAppHeight() {
   const vv = window.visualViewport
   const layoutH = Math.round(window.innerHeight)
@@ -32,12 +35,10 @@ function syncAppHeight() {
   const candidate = Math.max(visualH, layoutH)
 
   if (!editing) {
-    // 非輸入：跟瀏覽器 chrome；若高度仍接近穩定值則更新基準
     if (!stableAppHeight || visualH >= stableAppHeight * 0.85) {
       stableAppHeight = candidate
     }
-    const applied =
-      visualH >= stableAppHeight * 0.75 ? visualH : stableAppHeight
+    const applied = visualH >= stableAppHeight * 0.75 ? visualH : stableAppHeight
     document.documentElement.style.setProperty('--app-height', `${applied}px`)
     document.documentElement.style.setProperty(
       '--app-offset-top',
@@ -46,7 +47,6 @@ function syncAppHeight() {
     return
   }
 
-  // 輸入中：鎖住彈鍵盤前的高度，鍵盤改為覆蓋而非壓扁版面
   if (!stableAppHeight) stableAppHeight = candidate
   document.documentElement.style.setProperty('--app-height', `${stableAppHeight}px`)
   document.documentElement.style.setProperty('--app-offset-top', '0px')
@@ -81,26 +81,121 @@ document.addEventListener('focusout', onFocusOut)
 
 startAutoUpdateChecks()
 
-const app = document.querySelector<HTMLElement>('#app')!
-bootState()
-render(app)
-subscribe((kind) => render(app, kind))
-
-window.setInterval(() => {
-  if (!getState().starterDone) return
-  gameTick()
-}, TICK_MS)
-
-window.setInterval(() => {
-  if (!getState().starterDone) return
-  saveLocal(getState())
-}, 10000)
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && getState().starterDone) {
-    applyOfflineOnBoot()
-    syncAppHeight()
-  } else if (getState().starterDone) {
-    saveLocal(getState())
+function rememberMode(next: AppMode) {
+  try {
+    if (next === 'hub') localStorage.removeItem(MODE_KEY)
+    else localStorage.setItem(MODE_KEY, next)
+  } catch {
+    /* ignore */
   }
-})
+}
+
+function stopRealm() {
+  if (realmCleanup) {
+    realmCleanup()
+    realmCleanup = null
+  }
+  if (realmAutoTimer != null) {
+    window.clearInterval(realmAutoTimer)
+    realmAutoTimer = null
+  }
+  const p = getRealmState().player
+  if (p) saveRealm(getRealmState())
+}
+
+function stopIdle() {
+  if (idleCleanup) {
+    idleCleanup()
+    idleCleanup = null
+  }
+}
+
+function showHub() {
+  stopIdle()
+  stopRealm()
+  rememberMode('hub')
+  document.title = '雙界入口'
+  renderHub(app, (game) => {
+    if (game === 'idle') void launchIdle()
+    else launchRealm()
+  })
+}
+
+function launchRealm() {
+  stopIdle()
+  stopRealm()
+  rememberMode('realm')
+  document.title = '幻域征途'
+  bootRealm()
+  const paint = () => renderRealm(app)
+  paint()
+  realmCleanup = subscribeRealm(paint)
+  realmAutoTimer = window.setInterval(() => {
+    if (getRealmState().autoBattle && getRealmState().battle && !getRealmState().battle?.over) {
+      tickAutoBattle()
+    }
+  }, 700)
+}
+
+async function launchIdle() {
+  stopIdle()
+  stopRealm()
+  rememberMode('idle')
+  document.title = '異塔編年'
+  await import('./ui/style.css')
+  const { bootState, saveLocal } = await import('./game/save')
+  const { applyOfflineOnBoot, gameTick, getState, subscribe } = await import('./game/state')
+  const { render } = await import('./ui/render')
+  const { TICK_MS, GAME_NAME } = await import('./game/util')
+
+  document.title = GAME_NAME
+  bootState()
+  render(app)
+  const unsub = subscribe((kind) => render(app, kind))
+
+  const tickId = window.setInterval(() => {
+    if (!getState().starterDone) return
+    gameTick()
+  }, TICK_MS)
+
+  const saveId = window.setInterval(() => {
+    if (!getState().starterDone) return
+    saveLocal(getState())
+  }, 10000)
+
+  const onVis = () => {
+    if (document.visibilityState === 'visible' && getState().starterDone) {
+      applyOfflineOnBoot()
+      syncAppHeight()
+    } else if (getState().starterDone) {
+      saveLocal(getState())
+    }
+  }
+  document.addEventListener('visibilitychange', onVis)
+
+  // 在異塔設定頁無法回 hub 時，提供快捷：連點標題列可回入口（同時在 console 說明）
+  const hubHotkey = (ev: KeyboardEvent) => {
+    if (ev.key === 'Escape') showHub()
+  }
+  window.addEventListener('keydown', hubHotkey)
+
+  idleCleanup = () => {
+    unsub()
+    window.clearInterval(tickId)
+    window.clearInterval(saveId)
+    document.removeEventListener('visibilitychange', onVis)
+    window.removeEventListener('keydown', hubHotkey)
+  }
+}
+
+window.addEventListener('realm:hub', () => showHub())
+
+// 恢復上次選擇，方便重整後繼續
+try {
+  const saved = localStorage.getItem(MODE_KEY) as AppMode | null
+  if (saved === 'realm') launchRealm()
+  else if (saved === 'idle') void launchIdle()
+  else showHub()
+} catch {
+  showHub()
+}
