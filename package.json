@@ -9,7 +9,12 @@
     "preview": "vite preview --host",
     "dev:host": "vite --host",
     "sim:balance": "tsx scripts/monte-carlo-balance.ts",
-    "sim:optimal": "tsx scripts/sim-optimal-plan.ts"
+    "sim:optimal": "tsx scripts/sim-optimal-plan.ts",
+    "sim:spore:mc": "tsx scripts/spore-monte-carlo.ts",
+    "sim:spore:optimal": "tsx scripts/spore-optimal-path.ts",
+    "sim:spore:agent": "tsx scripts/spore-agent-sim.ts",
+    "sim:spore:discrete": "tsx scripts/spore-discrete-sweep.ts",
+    "sim:spore": "tsx scripts/spore-monte-carlo.ts && tsx scripts/spore-optimal-path.ts && tsx scripts/spore-agent-sim.ts && tsx scripts/spore-discrete-sweep.ts"
   },
   "devDependencies": {
     "tsx": "^4.20.5",
