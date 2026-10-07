@@ -82,7 +82,17 @@ function patchLiveHud(root: HTMLElement, s: GameState): void {
   if (progMeta) {
     const ratio = power / Math.max(1, enemyPower)
     const feel =
-      ratio < 0.5 ? '極弱' : ratio < 0.8 ? '吃力' : ratio < 1 ? '膠著' : ratio < 1.5 ? '優勢' : '碾壓'
+      ratio < 0.35
+        ? '卡住'
+        : ratio < 0.5
+          ? '極弱'
+          : ratio < 0.8
+            ? '吃力'
+            : ratio < 1
+              ? '膠著'
+              : ratio < 1.5
+                ? '優勢'
+                : '碾壓'
     progMeta.textContent = `${progPct}% · 敵 ${stage.enemy} · ${feel}`
   }
 
@@ -260,7 +270,17 @@ function renderBattle(s: GameState, stage: ReturnType<typeof stageOf>): string {
   const enemyPower = enemyPowerOf(stage.hp, stage.atk, stage.def)
   const ratio = power / Math.max(1, enemyPower)
   const feel =
-    ratio < 0.5 ? '極弱' : ratio < 0.8 ? '吃力' : ratio < 1 ? '膠著' : ratio < 1.5 ? '優勢' : '碾壓'
+    ratio < 0.35
+      ? '卡住'
+      : ratio < 0.5
+        ? '極弱'
+        : ratio < 0.8
+          ? '吃力'
+          : ratio < 1
+            ? '膠著'
+            : ratio < 1.5
+              ? '優勢'
+              : '碾壓'
   return `
     <div class="panel">
       <h2 data-stage-name>${esc(stage.name)}</h2>

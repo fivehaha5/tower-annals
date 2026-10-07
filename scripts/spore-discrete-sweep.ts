@@ -24,10 +24,11 @@ function enemyPower(stage: number): number {
   return enemyPowerOf(stage)
 }
 
-/** 理論清空 ticks（期望 step，無隨機；novice） */
+/** 理論清空 ticks（期望 step，無隨機；novice）；0 = 硬牆 */
 function expectedTicksToClear(ratio: number): number {
   const step = progressStep(ratio, 'novice') // mean mult ≈ 1.0
-  return Math.ceil(1 / Math.max(1e-6, step))
+  if (step <= 0) return Infinity
+  return Math.ceil(1 / step)
 }
 
 function classBarePower(level: number, classId: (typeof CLASSES)[number]['id']): number {
@@ -62,7 +63,7 @@ function main() {
       scale: +stageScale(n).toFixed(3),
     })
   }
-  console.log('--- 關卡敵方曲線（分段 scale：≤20×1.12 / ≤50×1.07 / 後×1.055）---')
+  console.log('--- 關卡敵方曲線（分段 scale：≤20×1.12 / ≤40×1.055 / 後×1.03）---')
   console.table(stageRows)
 
   // 2) 玩家裸裝職業曲線 vs 關卡
@@ -145,11 +146,13 @@ function main() {
   // 6) 期望通關時間 vs ratio
   const clearRows = [0.4, 0.5, 0.7, 0.85, 1.0, 1.2, 1.5, 1.8, 2.5].map((ratio) => {
     const ticks = expectedTicksToClear(ratio)
+    const finite = Number.isFinite(ticks)
     return {
       ratio,
-      ticks,
-      seconds: +((ticks * TICK_MS) / 1000).toFixed(1),
-      stagesPerHour: +((3600 / ((ticks * TICK_MS) / 1000)).toFixed(1)),
+      ticks: finite ? ticks : null,
+      seconds: finite ? +((ticks * TICK_MS) / 1000).toFixed(1) : null,
+      stagesPerHour: finite ? +((3600 / ((ticks * TICK_MS) / 1000)).toFixed(1)) : 0,
+      note: finite ? '' : '硬牆（無法通關）',
     }
   })
   console.log('--- 期望通關速度（依戰力比）---')

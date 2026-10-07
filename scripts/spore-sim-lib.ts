@@ -437,7 +437,21 @@ function battleBatch(
     const ratio = power / Math.max(1, enemyPower)
     const base = progressStep(ratio, player.classId)
     const mult = 0.85 + rng.next() * 0.3
-    const step = Math.max(1e-6, base * mult)
+    const step = base * mult
+
+    // ratio&lt;0.5：硬牆，本批次不推進但仍可緩慢產油以便投資破局
+    if (step <= 0) {
+      counters.stalledTicks += left
+      const regenEvery = oilRegenEvery(ratio)
+      let oilGain = 0
+      const end = tick + left
+      for (let t = tick; t < end; t++) if (t % regenEvery === 0) oilGain += 1
+      player.lampOil += oilGain
+      tick += left
+      left = 0
+      continue
+    }
+
     const need = 1 - player.stageProgress
     const ticksToClear = Math.max(1, Math.ceil(need / step))
     const used = Math.min(left, ticksToClear)
@@ -460,7 +474,7 @@ function battleBatch(
       player.coin += Math.floor(stage.coin * rewardMult)
       let hammer = Math.floor(stage.hammer * rewardMult)
       let oil = Math.floor((1 + Math.floor(player.forgeLevel / 3)) * rewardMult)
-      player.xp += Math.floor(stage.xp * Math.max(0.35, rewardMult))
+      player.xp += Math.floor(stage.xp * Math.max(0.5, rewardMult))
 
       const pet = player.petId ? PET_MAP[player.petId] : null
       const loot = pet?.lootBonus

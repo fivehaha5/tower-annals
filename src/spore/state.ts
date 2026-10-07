@@ -402,7 +402,7 @@ export function gameTick(): void {
     const coin = Math.floor(stage.coin * rewardMult)
     const hammer = Math.floor(stage.hammer * rewardMult)
     let oil = Math.floor((1 + Math.floor(player.forgeLevel / 3)) * rewardMult)
-    const xp = Math.floor(stage.xp * Math.max(0.35, rewardMult))
+    const xp = Math.floor(stage.xp * Math.max(0.5, rewardMult))
     const petLoot = applyPetLoot(player, ratio)
     const totalHammer = hammer + petLoot.hammer
     oil += petLoot.oil
