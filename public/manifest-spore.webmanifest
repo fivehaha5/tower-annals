@@ -1,0 +1,25 @@
+{
+  "name": "菇燈鍛造",
+  "short_name": "菇燈鍛造",
+  "description": "點神燈開箱、鍛造裝備、掛機推圖的菇勇者冒險",
+  "start_url": "./spore/",
+  "scope": "./spore/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a2e1a",
+  "theme_color": "#1a2e1a",
+  "icons": [
+    {
+      "src": "../icons/icon-192.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "../icons/icon-512.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

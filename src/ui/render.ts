@@ -1997,9 +1997,6 @@ function settingsView(_state: GameState): string {
         </div>
       </div>
       <p class="muted" style="margin-top:8px">建置 ${escapeHtml(APP_VERSION)}</p>
-      <div class="btn-row" style="margin-top:12px">
-        <button class="btn" data-act="back-hub" style="width:100%">返回雙界入口</button>
-      </div>
     </div>
   `
 }
@@ -2837,11 +2834,6 @@ function bind(root: HTMLElement) {
       if (act === 'savelocal') {
         saveLocal(st)
         toast(root, '已存檔')
-      }
-      if (act === 'back-hub') {
-        saveLocal(st)
-        window.dispatchEvent(new CustomEvent('realm:hub'))
-        return
       }
       if (act === 'exportfile') {
         downloadSaveFile(st)
