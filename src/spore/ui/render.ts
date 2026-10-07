@@ -1,3 +1,4 @@
+import { enemyPowerOf } from '../combat'
 import { CLASSES, CLASS_MAP } from '../data/classes'
 import { GEAR_MAP, RARITY_COLOR, SLOT_LABEL, SLOTS } from '../data/gear'
 import { PETS, PET_MAP } from '../data/pets'
@@ -14,6 +15,7 @@ import {
   getState,
   goBoot,
   goCreate,
+  hasSave,
   pullLamp,
   resetAll,
   selectPet,
@@ -21,20 +23,132 @@ import {
   setDraftName,
   setTab,
   upgradeForge,
+  type EmitKind,
 } from '../state'
 import type { ClassId, GameState, Stats, Tab } from '../types'
-import { GAME_NAME, formatNum, gearLine, powerScore, totalStats, xpToLevel } from '../util'
+import { BAG_CAP, GAME_NAME, formatNum, gearLine, powerScore, totalStats, xpToLevel } from '../util'
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-export function render(root: HTMLElement): void {
+function isEditingField(root: HTMLElement): boolean {
+  const el = document.activeElement as HTMLElement | null
+  if (!el || !root.contains(el)) return false
+  const tag = el.tagName
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (tag === 'INPUT') {
+    const type = (el as HTMLInputElement).type
+    return type !== 'button' && type !== 'submit' && type !== 'checkbox' && type !== 'radio'
+  }
+  return !!el.isContentEditable
+}
+
+/** tick 局部更新：避免每 500ms innerHTML 拆樹＋重播入場動畫 */
+function patchLiveHud(root: HTMLElement, s: GameState): void {
+  const p = s.player
+  if (!p || s.screen !== 'game') return
+
+  const stage = stageOf(p.stage)
+  const power = powerScore(p)
+  const enemyPower = enemyPowerOf(stage.hp, stage.atk, stage.def)
+  const xpNeed = xpToLevel(p.level)
+  const xpPct = Number.isFinite(xpNeed) ? Math.min(100, (p.xp / xpNeed) * 100) : 100
+  const progPct = Math.floor(p.stageProgress * 100)
+
+  const nameEl = root.querySelector('[data-status-name]') as HTMLElement | null
+  if (nameEl) nameEl.textContent = `${p.name} · ${CLASS_MAP[p.classId].name}`
+
+  const metaEl = root.querySelector('[data-status-meta]') as HTMLElement | null
+  if (metaEl) metaEl.textContent = `Lv.${p.level} · 戰力 ${formatNum(power)} · 關卡 ${p.stage}`
+
+  const xpFill = root.querySelector('[data-xp-bar] > i') as HTMLElement | null
+  if (xpFill) xpFill.style.width = `${xpPct}%`
+
+  const gold = root.querySelector('[data-res-gold]') as HTMLElement | null
+  if (gold) gold.textContent = `金 ${formatNum(p.coin)}`
+  const hammer = root.querySelector('[data-res-hammer]') as HTMLElement | null
+  if (hammer) hammer.textContent = `錘 ${formatNum(p.hammer)}`
+  const oil = root.querySelector('[data-res-oil]') as HTMLElement | null
+  if (oil) oil.textContent = `油 ${formatNum(p.lampOil)}`
+
+  const stageName = root.querySelector('[data-stage-name]') as HTMLElement | null
+  if (stageName) stageName.textContent = stage.name
+
+  const progFill = root.querySelector('[data-stage-bar] > i') as HTMLElement | null
+  if (progFill) progFill.style.width = `${progPct}%`
+
+  const progMeta = root.querySelector('[data-stage-meta]') as HTMLElement | null
+  if (progMeta) {
+    const ratio = power / Math.max(1, enemyPower)
+    const feel =
+      ratio < 0.5 ? '極弱' : ratio < 0.8 ? '吃力' : ratio < 1 ? '膠著' : ratio < 1.5 ? '優勢' : '碾壓'
+    progMeta.textContent = `${progPct}% · 敵 ${stage.enemy} · ${feel}`
+  }
+
+  const logEl = root.querySelector('[data-battle-log]') as HTMLElement | null
+  if (logEl) {
+    const lines = [...s.battleLog].reverse().slice(0, 12)
+    logEl.innerHTML =
+      lines.map((l) => `<div>${esc(l.text)}</div>`).join('') || '<div class="tiny">尚無紀錄</div>'
+  }
+
+  let toastEl = root.querySelector('.toast') as HTMLElement | null
+  if (s.toast) {
+    if (!toastEl) {
+      toastEl = document.createElement('div')
+      toastEl.className = 'toast'
+      root.querySelector('.game')?.appendChild(toastEl)
+    }
+    toastEl.textContent = s.toast
+    toastEl.style.display = 'block'
+  } else if (toastEl) {
+    toastEl.remove()
+  }
+}
+
+export function render(root: HTMLElement, kind: EmitKind = 'ui'): void {
   const s = getState()
+
+  // 掛機 tick：局部更新；編輯中或非 game 也避免拆樹
+  if (kind === 'tick' && s.screen === 'game' && s.player) {
+    const shell = root.querySelector('#spore-shell') as HTMLElement | null
+    if (shell?.querySelector('.game') && !isEditingField(root)) {
+      patchLiveHud(shell, s)
+      return
+    }
+  }
+
+  const prevContent = root.querySelector('.content') as HTMLElement | null
+  const scrollTop = prevContent?.scrollTop ?? 0
+  const active = document.activeElement as HTMLElement | null
+  const focusId = active && root.contains(active) && active.id ? active.id : null
+  const focusSel =
+    focusId && (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement)
+      ? { start: active.selectionStart, end: active.selectionEnd }
+      : null
+
   root.innerHTML = `<div class="shell" id="spore-shell"></div>`
   const shell = root.querySelector('#spore-shell') as HTMLElement
   paint(shell, s)
   bind(shell)
+
+  const content = shell.querySelector('.content') as HTMLElement | null
+  if (content) content.scrollTop = scrollTop
+  if (focusId) {
+    const el = shell.querySelector(`#${CSS.escape(focusId)}`) as HTMLElement | null
+    if (el) {
+      el.focus()
+      if (
+        focusSel &&
+        (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) &&
+        focusSel.start != null &&
+        focusSel.end != null
+      ) {
+        el.setSelectionRange(focusSel.start, focusSel.end)
+      }
+    }
+  }
 }
 
 function paint(shell: HTMLElement, s: GameState): void {
@@ -45,8 +159,8 @@ function paint(shell: HTMLElement, s: GameState): void {
         <p class="sub">參考《菇勇者傳說》神燈開箱＋《Forge Master》鍛造養成：掛機推圖、點燈噴裝、升級鐵砧。</p>
         <div class="mushroom-hero" aria-hidden="true"></div>
         <div class="btn-col">
-          <button class="btn primary" data-act="continue" type="button">繼續冒險</button>
-          <button class="btn" data-act="new" type="button">新的菇菇</button>
+          ${hasSave() ? '<button class="btn primary" data-act="continue" type="button">繼續冒險</button>' : ''}
+          <button class="btn${hasSave() ? '' : ' primary'}" data-act="new" type="button">新的菇菇</button>
         </div>
         <p class="tiny" style="margin-top:14px;text-align:center">獨立入口 · 與《異塔編年》互不干擾</p>
       </div>
@@ -76,19 +190,20 @@ function paint(shell: HTMLElement, s: GameState): void {
   const stage = stageOf(p.stage)
   const stats = totalStats(p)
   const xpNeed = xpToLevel(p.level)
+  const power = powerScore(p)
 
   shell.innerHTML = `
     <div class="game">
       <div class="status">
         <div>
-          <div class="status-name">${esc(p.name)} · ${esc(CLASS_MAP[p.classId].name)}</div>
-          <div class="status-meta">Lv.${p.level} · 戰力 ${formatNum(powerScore(p))} · 關卡 ${p.stage}</div>
-          <div class="bar"><i style="width:${Number.isFinite(xpNeed) ? Math.min(100, (p.xp / xpNeed) * 100) : 100}%"></i></div>
+          <div class="status-name" data-status-name>${esc(p.name)} · ${esc(CLASS_MAP[p.classId].name)}</div>
+          <div class="status-meta" data-status-meta>Lv.${p.level} · 戰力 ${formatNum(power)} · 關卡 ${p.stage}</div>
+          <div class="bar" data-xp-bar><i style="width:${Number.isFinite(xpNeed) ? Math.min(100, (p.xp / xpNeed) * 100) : 100}%"></i></div>
         </div>
         <div class="res-row">
-          <span class="chip gold">金 ${formatNum(p.coin)}</span>
-          <span class="chip hammer">錘 ${formatNum(p.hammer)}</span>
-          <span class="chip oil">油 ${formatNum(p.lampOil)}</span>
+          <span class="chip gold" data-res-gold>金 ${formatNum(p.coin)}</span>
+          <span class="chip hammer" data-res-hammer>錘 ${formatNum(p.hammer)}</span>
+          <span class="chip oil" data-res-oil>油 ${formatNum(p.lampOil)}</span>
         </div>
       </div>
       <div class="content">${renderTab(s, stage, stats)}</div>
@@ -141,13 +256,18 @@ function renderTab(s: GameState, stage: ReturnType<typeof stageOf>, stats: Stats
 function renderBattle(s: GameState, stage: ReturnType<typeof stageOf>): string {
   const p = s.player!
   const pct = Math.floor(p.stageProgress * 100)
+  const power = powerScore(p)
+  const enemyPower = enemyPowerOf(stage.hp, stage.atk, stage.def)
+  const ratio = power / Math.max(1, enemyPower)
+  const feel =
+    ratio < 0.5 ? '極弱' : ratio < 0.8 ? '吃力' : ratio < 1 ? '膠著' : ratio < 1.5 ? '優勢' : '碾壓'
   return `
     <div class="panel">
-      <h2>${esc(stage.name)}</h2>
+      <h2 data-stage-name>${esc(stage.name)}</h2>
       <p class="lede">掛機自動推圖。戰力夠就一路往前；不夠就去點神燈換裝。</p>
       <div class="tiny">進度</div>
-      <div class="bar"><i style="width:${pct}%"></i></div>
-      <p class="tiny" style="margin-top:6px">${pct}% · 敵 ${esc(stage.enemy)}</p>
+      <div class="bar" data-stage-bar><i style="width:${pct}%"></i></div>
+      <p class="tiny" style="margin-top:6px" data-stage-meta>${pct}% · 敵 ${esc(stage.enemy)} · ${feel}</p>
       <div class="sep"></div>
       <div class="row">
         <button class="btn gold" data-tab="forge" type="button">去點神燈</button>
@@ -156,7 +276,7 @@ function renderBattle(s: GameState, stage: ReturnType<typeof stageOf>): string {
     </div>
     <div class="panel">
       <h2>戰鬥日誌</h2>
-      <div class="log">
+      <div class="log" data-battle-log>
         ${
           [...s.battleLog]
             .reverse()
@@ -190,7 +310,7 @@ function renderForge(s: GameState): string {
     </div>
     <div class="panel">
       <h2>鍛造爐 Lv.${p.forgeLevel}</h2>
-      <p class="lede">爐級越高，史詩／傳說越容易噴出。</p>
+      <p class="lede">爐級越高，史詩／傳說越容易噴出。爐 Lv.12 仍會繼續提升稀有率。</p>
       <button class="btn gold" data-act="upgrade-forge" type="button" style="width:100%">
         升級鍛造爐（${up.hammer} 錘 · ${up.coin} 金）
       </button>
@@ -222,8 +342,8 @@ function renderBag(s: GameState): string {
       </div>
     </div>
     <div class="panel">
-      <h2>背包（${p.bag.length}）</h2>
-      <p class="lede">點裝備可穿上；多餘的可強化或賣掉換金。</p>
+      <h2>背包（${p.bag.length}/${BAG_CAP}）</h2>
+      <p class="lede">點裝備可穿上；多餘的可強化或賣掉換金。超過 ${BAG_CAP} 件會自動賣掉最弱未裝備。</p>
       <div class="list">
         ${
           p.bag
@@ -273,7 +393,7 @@ function renderHero(s: GameState, stats: Stats): string {
     </div>
     <div class="panel">
       <h2>轉職</h2>
-      <p class="lede">Lv.10 可選戰士／弓箭手／法師（菇勇者傳說式）。</p>
+      <p class="lede">Lv.10 可選戰士／弓箭手／法師（菇勇者傳說式）。職業會影響推圖速度。</p>
       <div class="list">
         ${CLASSES.filter((c) => c.id !== 'novice')
           .map((c) => {
@@ -295,10 +415,11 @@ function renderHero(s: GameState, stats: Stats): string {
         ${PETS.map((pet) => {
           const unlocked = p.unlockedPets.includes(pet.id)
           const active = p.petId === pet.id
+          const lockHint = `關卡 ${pet.unlockStage} · 爐 Lv.${pet.unlockForge}`
           return `<button class="list-btn" type="button" data-pet="${pet.id}" ${unlocked ? '' : 'disabled'} style="${
             active ? 'border-color:var(--cap)' : ''
           }">
-            <strong>${esc(pet.name)} ${active ? '· 出戰' : unlocked ? '' : `· 關卡 ${pet.unlockStage}`}</strong>
+            <strong>${esc(pet.name)} ${active ? '· 出戰' : unlocked ? '' : `· ${lockHint}`}</strong>
             <span>${esc(pet.blurb)}</span>
           </button>`
         }).join('')}

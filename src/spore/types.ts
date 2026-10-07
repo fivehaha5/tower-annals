@@ -25,7 +25,7 @@ export interface GearDef {
 export interface OwnedGear {
   uid: string
   defId: string
-  /** 隨機詞條加成（百分比點） */
+  /** 隨機詞條平坦加值（非百分比） */
   affix: Partial<Stats>
   level: number
 }
@@ -36,6 +36,13 @@ export interface PetDef {
   blurb: string
   bonus: Partial<Stats>
   unlockStage: number
+  /** 鍛造爐等級門檻（與關卡並列） */
+  unlockForge: number
+  lootBonus?: {
+    hammerChance?: number
+    oilChance?: number
+    oilExtra?: number
+  }
 }
 
 export interface StageDef {

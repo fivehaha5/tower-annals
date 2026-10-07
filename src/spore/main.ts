@@ -1,5 +1,6 @@
 import './ui/style.css'
-import { boot, gameTick, subscribe } from './state'
+import { startAutoUpdateChecks } from '../appUpdate'
+import { boot, flushSave, gameTick, subscribe } from './state'
 import { TICK_MS } from './util'
 import { render } from './ui/render'
 
@@ -40,14 +41,38 @@ function syncAppHeight() {
   document.documentElement.style.setProperty('--app-offset-top', '0px')
 }
 
+function onFocusIn(ev: FocusEvent) {
+  syncAppHeight()
+  const t = ev.target as HTMLElement | null
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+    window.setTimeout(() => {
+      t.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 80)
+  }
+}
+
+function onFocusOut() {
+  window.setTimeout(syncAppHeight, 80)
+  window.setTimeout(syncAppHeight, 320)
+}
+
 syncAppHeight()
 window.addEventListener('resize', syncAppHeight)
 window.visualViewport?.addEventListener('resize', syncAppHeight)
 window.visualViewport?.addEventListener('scroll', syncAppHeight)
+document.addEventListener('focusin', onFocusIn)
+document.addEventListener('focusout', onFocusOut)
+
+startAutoUpdateChecks()
 
 const app = document.querySelector<HTMLElement>('#app')!
 boot()
 render(app)
-subscribe(() => render(app))
+subscribe((kind) => render(app, kind))
 
 window.setInterval(() => gameTick(), TICK_MS)
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSave()
+})
+window.addEventListener('pagehide', () => flushSave())

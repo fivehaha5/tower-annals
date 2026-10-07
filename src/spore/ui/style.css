@@ -286,7 +286,7 @@ body {
   border-radius: 16px;
   padding: 14px;
   margin-bottom: 10px;
-  animation: rise 0.3s ease both;
+  /* 不在每 tick 重播 rise；僅首次掛載的 boot/create 使用入場動畫 */
 }
 
 .panel h2 {

@@ -15,11 +15,19 @@ const ENEMIES = [
   '虛空先驅',
 ]
 
+/** 分段關卡倍率：前期爽感、中後期讓裝備能追上 */
+export function stageScale(n: number): number {
+  const i = Math.max(1, Math.floor(n))
+  if (i <= 20) return Math.pow(1.12, i - 1)
+  if (i <= 50) return Math.pow(1.12, 19) * Math.pow(1.07, i - 20)
+  return Math.pow(1.12, 19) * Math.pow(1.07, 30) * Math.pow(1.055, i - 50)
+}
+
 export function stageOf(n: number): StageDef {
   const i = Math.max(1, Math.floor(n))
   const tier = Math.floor((i - 1) / 10)
   const enemy = ENEMIES[tier % ENEMIES.length]
-  const scale = Math.pow(1.18, i - 1)
+  const scale = stageScale(i)
   return {
     id: i,
     name: `${i} 關 · ${enemy}`,

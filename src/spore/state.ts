@@ -1,23 +1,28 @@
+import { clearRewardMult, enemyPowerOf, oilRegenEvery, progressStep } from './combat'
 import { CLASSES, CLASS_MAP } from './data/classes'
 import { GEAR_MAP } from './data/gear'
-import { PETS } from './data/pets'
+import { PETS, PET_MAP } from './data/pets'
 import { stageOf } from './data/stages'
 import { canPull, forgeUpgradeCost } from './forge'
 import { clearSave, hasSave, loadSave, writeSave } from './save'
 import type { ClassId, GameState, OwnedGear, Player, Tab } from './types'
 import {
+  BAG_CAP,
   GAME_NAME,
   LEVEL_CAP,
   OFFLINE_CAP_SEC,
   createPlayer,
   forgeXpToLevel,
+  gearCombatScore,
   lampCost,
   powerScore,
+  sellValue,
   totalStats,
   xpToLevel,
 } from './util'
 
-type Listener = () => void
+export type EmitKind = 'tick' | 'ui'
+type Listener = (kind: EmitKind) => void
 const listeners = new Set<Listener>()
 
 let state: GameState = fresh()
@@ -47,8 +52,8 @@ export function subscribe(fn: Listener): () => void {
   return () => listeners.delete(fn)
 }
 
-function emit(): void {
-  for (const fn of listeners) fn()
+function emit(kind: EmitKind = 'ui'): void {
+  for (const fn of listeners) fn(kind)
 }
 
 function toast(text: string): void {
@@ -56,7 +61,7 @@ function toast(text: string): void {
   window.setTimeout(() => {
     if (state.toast === text) {
       state = { ...state, toast: null }
-      emit()
+      emit('ui')
     }
   }, 1800)
 }
@@ -67,7 +72,7 @@ function mutate(fn: (p: Player) => void): void {
   fn(player)
   state = { ...state, player }
   writeSave(state)
-  emit()
+  emit('ui')
 }
 
 function pushLog(text: string): void {
@@ -75,6 +80,10 @@ function pushLog(text: string): void {
     ...state,
     battleLog: [...state.battleLog.slice(-40), { text, at: Date.now() }],
   }
+}
+
+export function flushSave(): void {
+  if (state.player) writeSave(state)
 }
 
 export function boot(): void {
@@ -103,20 +112,22 @@ export function boot(): void {
       offlineReport,
       battleLog: [{ text: `歡迎回來，${player.name}。神燈還熱著。`, at: Date.now() }],
     }
+    // B2：離線結算後立刻落盤，避免重領／丟獎
+    writeSave(state)
   } else {
     state = { ...fresh(), screen: 'boot' }
   }
-  emit()
+  emit('ui')
 }
 
 export function goBoot(): void {
   state = { ...state, screen: 'boot' }
-  emit()
+  emit('ui')
 }
 
 export function goCreate(): void {
   state = { ...state, screen: 'create', draftName: '', draftClass: 'novice' }
-  emit()
+  emit('ui')
 }
 
 export function setDraftName(name: string): void {
@@ -125,12 +136,11 @@ export function setDraftName(name: string): void {
 
 export function setDraftClass(id: ClassId): void {
   state = { ...state, draftClass: id, draftName: state.draftName }
-  emit()
+  emit('ui')
 }
 
 export function confirmCreate(nameOverride?: string): void {
   const name = (nameOverride ?? state.draftName).trim()
-  // 新手固定菇勇者；進階職業之後在英雄頁轉職
   const player = createPlayer(name, 'novice')
   state = {
     ...state,
@@ -145,7 +155,7 @@ export function confirmCreate(nameOverride?: string): void {
     ],
   }
   writeSave(state)
-  emit()
+  emit('ui')
 }
 
 export function continueGame(): void {
@@ -158,20 +168,45 @@ export function continueGame(): void {
 
 export function setTab(tab: Tab): void {
   state = { ...state, tab }
-  emit()
+  emit('ui')
 }
 
 export function dismissOffline(): void {
   state = { ...state, offlineReport: null }
-  emit()
+  writeSave(state)
+  emit('ui')
+}
+
+function trimBag(player: Player): string[] {
+  const sold: string[] = []
+  const equipped = new Set(Object.values(player.equips).filter(Boolean) as string[])
+  while (player.bag.length > BAG_CAP) {
+    let junk: OwnedGear | null = null
+    let junkScore = Infinity
+    for (const g of player.bag) {
+      if (equipped.has(g.uid)) continue
+      const sc = gearCombatScore(g)
+      if (sc < junkScore) {
+        junkScore = sc
+        junk = g
+      }
+    }
+    if (!junk) break
+    const coin = sellValue(junk)
+    player.coin += coin
+    player.bag = player.bag.filter((b) => b.uid !== junk!.uid)
+    sold.push(GEAR_MAP[junk.defId]?.name ?? '裝備')
+  }
+  return sold
 }
 
 export function pullLamp(times = 1): void {
   if (!state.player || state.forging) return
   state = { ...state, forging: true }
-  emit()
+  emit('ui')
 
   const drops: string[] = []
+  let autoSold = 0
   mutate((player) => {
     for (let i = 0; i < times; i++) {
       const res = canPull(player.lampOil, player.forgeLevel)
@@ -190,21 +225,22 @@ export function pullLamp(times = 1): void {
       }
       const def = GEAR_MAP[res.gear.defId]
       drops.push(`${def?.rarity ?? ''}·${def?.name ?? '裝備'}`)
-      // auto-equip if empty slot or clearly better rarity
       maybeAutoEquip(player, res.gear)
     }
+    autoSold = trimBag(player).length
   })
 
   if (drops.length) {
     const text = drops.length === 1 ? `神燈噴出：${drops[0]}` : `連抽 ${drops.length} 次：${drops.join('、')}`
     state = { ...state, lastDrop: text, forging: false }
     pushLog(text)
-    toast(text)
+    if (autoSold) toast(`${text}（背包滿，自動賣掉 ${autoSold} 件）`)
+    else toast(text)
   } else {
     state = { ...state, forging: false }
   }
   writeSave(state)
-  emit()
+  emit('ui')
 }
 
 function maybeAutoEquip(player: Player, gear: OwnedGear): void {
@@ -220,9 +256,8 @@ function maybeAutoEquip(player: Player, gear: OwnedGear): void {
     player.equips[def.slot] = gear.uid
     return
   }
-  const curDef = GEAR_MAP[cur.defId]
-  const order = ['普通', '優秀', '精良', '史詩', '傳說', '神話']
-  if (order.indexOf(def.rarity) > order.indexOf(curDef?.rarity ?? '普通')) {
+  // B7：比戰力貢獻，不單比稀有度
+  if (gearCombatScore(gear) > gearCombatScore(cur)) {
     player.equips[def.slot] = gear.uid
   }
 }
@@ -257,8 +292,7 @@ export function sellGear(uid: string): void {
     const g = player.bag.find((b) => b.uid === uid)
     const def = g ? GEAR_MAP[g.defId] : null
     if (!g || !def) return
-    const order = ['普通', '優秀', '精良', '史詩', '傳說', '神話']
-    const coin = 5 + order.indexOf(def.rarity) * 12 + g.level * 2
+    const coin = sellValue(g)
     player.coin += coin
     player.bag = player.bag.filter((b) => b.uid !== uid)
     for (const slot of Object.keys(player.equips) as (keyof Player['equips'])[]) {
@@ -323,12 +357,24 @@ function levelUpLoop(player: Player): void {
 
 function unlockPets(player: Player): void {
   for (const pet of PETS) {
-    if (player.stage >= pet.unlockStage && !player.unlockedPets.includes(pet.id)) {
+    const forgeOk = player.forgeLevel >= (pet.unlockForge ?? 1)
+    if (player.stage >= pet.unlockStage && forgeOk && !player.unlockedPets.includes(pet.id)) {
       player.unlockedPets.push(pet.id)
       pushLog(`解鎖同伴：${pet.name}`)
       toast(`解鎖同伴 ${pet.name}`)
     }
   }
+}
+
+function applyPetLoot(player: Player, ratio: number): { hammer: number; oil: number } {
+  const pet = player.petId ? PET_MAP[player.petId] : null
+  const loot = pet?.lootBonus
+  if (!loot || ratio < 0.5) return { hammer: 0, oil: 0 }
+  let hammer = 0
+  let oil = 0
+  if (loot.hammerChance && Math.random() < loot.hammerChance) hammer += 1
+  if (loot.oilChance && Math.random() < loot.oilChance) oil += loot.oilExtra ?? 1
+  return { hammer, oil }
 }
 
 /** 掛機戰鬥 tick：自動推關 */
@@ -338,17 +384,10 @@ export function gameTick(): void {
   const stage = stageOf(player.stage)
   const stats = totalStats(player)
   const power = powerScore(player)
-  const enemyPower = Math.floor(stage.hp * 0.4 + stage.atk * 5 + stage.def * 3)
+  const enemyPower = enemyPowerOf(stage.hp, stage.atk, stage.def)
 
-  // 相對優勢決定推進速度
   const ratio = power / Math.max(1, enemyPower)
-  let step = 0.04
-  if (ratio < 0.7) step = 0.01
-  else if (ratio < 1) step = 0.025
-  else if (ratio < 1.4) step = 0.055
-  else step = 0.09
-
-  // 小幅隨機
+  let step = progressStep(ratio, player.classId)
   step *= 0.85 + Math.random() * 0.3
   player.stageProgress = Math.min(1, player.stageProgress + step)
 
@@ -358,31 +397,48 @@ export function gameTick(): void {
   }
 
   if (player.stageProgress >= 1) {
+    const rewardMult = clearRewardMult(ratio)
     player.stageProgress = 0
-    player.coin += stage.coin
-    player.hammer += stage.hammer
-    player.lampOil += 1 + Math.floor(player.forgeLevel / 3)
-    player.xp += stage.xp
-    pushLog(`通關 ${stage.name}！+${stage.coin}金 +${stage.xp}XP` + (stage.hammer ? ` +${stage.hammer}錘` : ''))
+    const coin = Math.floor(stage.coin * rewardMult)
+    const hammer = Math.floor(stage.hammer * rewardMult)
+    let oil = Math.floor((1 + Math.floor(player.forgeLevel / 3)) * rewardMult)
+    const xp = Math.floor(stage.xp * Math.max(0.35, rewardMult))
+    const petLoot = applyPetLoot(player, ratio)
+    const totalHammer = hammer + petLoot.hammer
+    oil += petLoot.oil
+    player.coin += coin
+    player.hammer += totalHammer
+    player.lampOil += oil
+    player.xp += xp
+    const lootNote =
+      petLoot.hammer || petLoot.oil
+        ? `（偷燈鼠 +${petLoot.hammer ? `${petLoot.hammer}錘` : ''}${petLoot.oil ? `${petLoot.oil}油` : ''}）`
+        : ''
+    pushLog(
+      `通關 ${stage.name}！+${coin}金 +${xp}XP` +
+        (totalHammer ? ` +${totalHammer}錘` : '') +
+        (oil ? ` +${oil}油` : '') +
+        lootNote,
+    )
     player.stage += 1
     levelUpLoop(player)
     unlockPets(player)
   }
 
-  // 緩慢回復神燈油
-  if (state.tick % 8 === 0) player.lampOil += 1
+  const regenEvery = oilRegenEvery(ratio)
+  if (state.tick % regenEvery === 0) player.lampOil += 1
 
   player.lastTick = Date.now()
   state = { ...state, player, tick: state.tick + 1 }
   if (state.tick % 10 === 0) writeSave(state)
-  emit()
+  emit('tick')
 }
 
 export function resetAll(): void {
   clearSave()
   state = fresh()
   state.screen = 'boot'
-  emit()
+  emit('ui')
 }
 
 export function createChoices() {

@@ -9,6 +9,8 @@ export const SAVE_VERSION = 1
 export const LEVEL_CAP = 80
 export const OFFLINE_CAP_SEC = 8 * 3600
 export const TICK_MS = 500
+/** 背包上限；超出時自動賣掉最弱未裝備件 */
+export const BAG_CAP = 48
 
 export function uid(prefix = 'g'): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-3)}`
@@ -130,9 +132,24 @@ export function totalStats(player: Player): Stats {
   return s
 }
 
-export function powerScore(player: Player): number {
-  const s = totalStats(player)
+export function statsPower(s: Stats): number {
   return Math.floor(s.atk * 4 + s.def * 3 + s.hp * 0.35 + s.spd * 2 + s.crit * 3)
+}
+
+export function powerScore(player: Player): number {
+  return statsPower(totalStats(player))
+}
+
+/** 單件裝備戰力貢獻（自動裝備／背包清理共用） */
+export function gearCombatScore(g: OwnedGear): number {
+  return statsPower(gearPower(g))
+}
+
+export function sellValue(g: OwnedGear): number {
+  const def = GEAR_MAP[g.defId]
+  if (!def) return 1
+  const order = ['普通', '優秀', '精良', '史詩', '傳說', '神話']
+  return 5 + order.indexOf(def.rarity) * 12 + g.level * 2
 }
 
 export function gearLine(g: OwnedGear): string {

@@ -28,17 +28,37 @@ function rollAffix(rarity: Rarity): Partial<Stats> {
   return out
 }
 
+function poolFor(rarity: Rarity, forgeLevel: number) {
+  return GEAR.filter((g) => g.rarity === rarity && g.forgeMin <= forgeLevel)
+}
+
+/** 抽中空池稀有時降級到該爐可出的最高稀有，避免「史詩權重→木棒」 */
 export function rollGear(forgeLevel: number): OwnedGear {
   const idx = Math.min(RARITY_WEIGHT_BY_FORGE.length - 1, Math.max(0, forgeLevel - 1))
-  const weights = [...RARITY_WEIGHT_BY_FORGE[idx]]
-  const rarity = pickWeighted(RARITY_ORDER, weights)
-  const pool = GEAR.filter((g) => g.rarity === rarity && g.forgeMin <= forgeLevel)
+  const weights = RARITY_WEIGHT_BY_FORGE[idx].map((w, i) =>
+    poolFor(RARITY_ORDER[i], forgeLevel).length ? w : 0,
+  )
+  const weightSum = weights.reduce((a, b) => a + b, 0)
+  let rarity: Rarity =
+    weightSum > 0 ? pickWeighted(RARITY_ORDER, weights) : '普通'
+
+  let pool = poolFor(rarity, forgeLevel)
+  while (!pool.length) {
+    const ri = RARITY_ORDER.indexOf(rarity)
+    if (ri <= 0) {
+      pool = GEAR.filter((g) => g.forgeMin <= forgeLevel)
+      break
+    }
+    rarity = RARITY_ORDER[ri - 1]
+    pool = poolFor(rarity, forgeLevel)
+  }
+
   const def = pool[Math.floor(Math.random() * pool.length)] ?? GEAR[0]
   return {
     uid: uid(),
     defId: def.id,
     level: 1 + Math.floor(Math.random() * Math.min(5, 1 + Math.floor(forgeLevel / 2))),
-    affix: rollAffix(rarity),
+    affix: rollAffix(def.rarity),
   }
 }
 
