@@ -609,7 +609,10 @@ function bind(shell: HTMLElement, s: GameState): void {
         window.dispatchEvent(new CustomEvent('realm:hub'))
       }
       if (act === 'back-title') goTitle()
-      if (act === 'confirm-create') confirmCreate()
+      if (act === 'confirm-create') {
+        const input = shell.querySelector('#name-input') as HTMLInputElement | null
+        confirmCreate(input?.value ?? undefined)
+      }
       if (act === 'hunt') hunt()
       if (act === 'rest') restInTown()
       if (act === 'shop') setModal({ kind: 'shop' })
@@ -625,7 +628,11 @@ function bind(shell: HTMLElement, s: GameState): void {
   })
 
   const nameInput = shell.querySelector('#name-input') as HTMLInputElement | null
-  nameInput?.addEventListener('input', () => setDraftName(nameInput.value))
+  nameInput?.addEventListener('compositionend', () => setDraftName(nameInput.value))
+  nameInput?.addEventListener('input', (ev) => {
+    if ((ev as InputEvent).isComposing) return
+    setDraftName(nameInput.value)
+  })
 
   shell.querySelectorAll('[data-tab]').forEach((el) => {
     el.addEventListener('click', () => setTab((el as HTMLElement).dataset.tab as Tab))

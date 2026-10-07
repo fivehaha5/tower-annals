@@ -136,15 +136,17 @@ export function goCreate(): void {
 }
 
 export function setDraftName(name: string): void {
-  setState({ draftName: name })
+  // 不 emit：避免每次按鍵重繪把輸入框拆掉，只留得住第一個字
+  state = { ...state, draftName: name }
 }
 
 export function setDraftClass(id: ClassId): void {
-  setState({ draftClass: id })
+  setState({ draftClass: id, draftName: state.draftName })
 }
 
-export function confirmCreate(): void {
-  const player = createPlayer(state.draftName, state.draftClass)
+export function confirmCreate(nameOverride?: string): void {
+  const name = (nameOverride ?? state.draftName).trim()
+  const player = createPlayer(name, state.draftClass)
   // auto-equip starter gear
   const weapon = player.bag.find((b) => ITEM_MAP[b.defId]?.slot === 'weapon')
   const armor = player.bag.find((b) => ITEM_MAP[b.defId]?.slot === 'armor')
@@ -520,14 +522,18 @@ export function sellItem(itemUid: string): void {
 export function buyItem(defId: string): void {
   const def = ITEM_MAP[defId]
   if (!def || !SHOP_ITEM_IDS.includes(defId)) return
+  const before = state.player?.gold ?? 0
+  if (before < def.price) {
+    toast('金幣不足')
+    emit()
+    return
+  }
   mutatePlayer((player) => {
     if (player.gold < def.price) return
     player.gold -= def.price
     addItem(player, defId, 1)
   })
-  if ((state.player?.gold ?? 0) >= 0) {
-    toast(`購買 ${def.name}`)
-  }
+  toast(`購買 ${def.name}`)
   emit()
 }
 
