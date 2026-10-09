@@ -32,17 +32,32 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-function isEditingField(root: HTMLElement): boolean {
-  const el = document.activeElement as HTMLElement | null
-  if (!el || !root.contains(el)) return false
-  const tag = el.tagName
-  if (tag === 'TEXTAREA' || tag === 'SELECT') return true
-  if (tag === 'INPUT') {
-    const type = (el as HTMLInputElement).type
-    return type !== 'button' && type !== 'submit' && type !== 'checkbox' && type !== 'radio'
-  }
-  return !!el.isContentEditable
+/** 只在文字真的變了才寫 DOM，避免無意義 reflow */
+function setTextIfChanged(el: HTMLElement | null, text: string): void {
+  if (!el || el.textContent === text) return
+  el.textContent = text
 }
+
+/**
+ * 進度條寬度：上升可平滑；下降（通關歸零）關掉 transition，避免 100→0 抽條閃爍。
+ * 同值不寫，避免每 tick 重觸發 transition。
+ */
+function setBarWidth(fill: HTMLElement | null, pct: number): void {
+  if (!fill) return
+  const next = `${pct}%`
+  if (fill.style.width === next) return
+  const prev = parseFloat(fill.style.width) || 0
+  if (pct < prev - 0.5) {
+    fill.style.transition = 'none'
+    fill.style.width = next
+    void fill.offsetWidth
+    fill.style.transition = ''
+    return
+  }
+  fill.style.width = next
+}
+
+let lastBattleLogSig = ''
 
 /** tick 局部更新：避免每 500ms innerHTML 拆樹＋重播入場動畫 */
 function patchLiveHud(root: HTMLElement, s: GameState): void {
@@ -56,51 +71,60 @@ function patchLiveHud(root: HTMLElement, s: GameState): void {
   const xpPct = Number.isFinite(xpNeed) ? Math.min(100, (p.xp / xpNeed) * 100) : 100
   const progPct = Math.floor(p.stageProgress * 100)
 
-  const nameEl = root.querySelector('[data-status-name]') as HTMLElement | null
-  if (nameEl) nameEl.textContent = `${p.name} · ${CLASS_MAP[p.classId].name}`
+  setTextIfChanged(
+    root.querySelector('[data-status-name]') as HTMLElement | null,
+    `${p.name} · ${CLASS_MAP[p.classId].name}`,
+  )
+  setTextIfChanged(
+    root.querySelector('[data-status-meta]') as HTMLElement | null,
+    `Lv.${p.level} · 戰力 ${formatNum(power)} · 關卡 ${p.stage}`,
+  )
+  setBarWidth(root.querySelector('[data-xp-bar] > i') as HTMLElement | null, xpPct)
 
-  const metaEl = root.querySelector('[data-status-meta]') as HTMLElement | null
-  if (metaEl) metaEl.textContent = `Lv.${p.level} · 戰力 ${formatNum(power)} · 關卡 ${p.stage}`
+  setTextIfChanged(
+    root.querySelector('[data-res-gold]') as HTMLElement | null,
+    `金 ${formatNum(p.coin)}`,
+  )
+  setTextIfChanged(
+    root.querySelector('[data-res-hammer]') as HTMLElement | null,
+    `錘 ${formatNum(p.hammer)}`,
+  )
+  setTextIfChanged(
+    root.querySelector('[data-res-oil]') as HTMLElement | null,
+    `油 ${formatNum(p.lampOil)}`,
+  )
 
-  const xpFill = root.querySelector('[data-xp-bar] > i') as HTMLElement | null
-  if (xpFill) xpFill.style.width = `${xpPct}%`
+  setTextIfChanged(root.querySelector('[data-stage-name]') as HTMLElement | null, stage.name)
+  setBarWidth(root.querySelector('[data-stage-bar] > i') as HTMLElement | null, progPct)
 
-  const gold = root.querySelector('[data-res-gold]') as HTMLElement | null
-  if (gold) gold.textContent = `金 ${formatNum(p.coin)}`
-  const hammer = root.querySelector('[data-res-hammer]') as HTMLElement | null
-  if (hammer) hammer.textContent = `錘 ${formatNum(p.hammer)}`
-  const oil = root.querySelector('[data-res-oil]') as HTMLElement | null
-  if (oil) oil.textContent = `油 ${formatNum(p.lampOil)}`
+  const ratio = power / Math.max(1, enemyPower)
+  const feel =
+    ratio < 0.35
+      ? '卡住'
+      : ratio < 0.5
+        ? '極弱'
+        : ratio < 0.8
+          ? '吃力'
+          : ratio < 1
+            ? '膠著'
+            : ratio < 1.5
+              ? '優勢'
+              : '碾壓'
+  setTextIfChanged(
+    root.querySelector('[data-stage-meta]') as HTMLElement | null,
+    `${progPct}% · 敵 ${stage.enemy} · ${feel}`,
+  )
 
-  const stageName = root.querySelector('[data-stage-name]') as HTMLElement | null
-  if (stageName) stageName.textContent = stage.name
-
-  const progFill = root.querySelector('[data-stage-bar] > i') as HTMLElement | null
-  if (progFill) progFill.style.width = `${progPct}%`
-
-  const progMeta = root.querySelector('[data-stage-meta]') as HTMLElement | null
-  if (progMeta) {
-    const ratio = power / Math.max(1, enemyPower)
-    const feel =
-      ratio < 0.35
-        ? '卡住'
-        : ratio < 0.5
-          ? '極弱'
-          : ratio < 0.8
-            ? '吃力'
-            : ratio < 1
-              ? '膠著'
-              : ratio < 1.5
-                ? '優勢'
-                : '碾壓'
-    progMeta.textContent = `${progPct}% · 敵 ${stage.enemy} · ${feel}`
-  }
-
+  // 戰鬥日誌：內容沒變就不要 innerHTML，否則每 500ms 拆節點會閃
   const logEl = root.querySelector('[data-battle-log]') as HTMLElement | null
   if (logEl) {
     const lines = [...s.battleLog].reverse().slice(0, 12)
-    logEl.innerHTML =
-      lines.map((l) => `<div>${esc(l.text)}</div>`).join('') || '<div class="tiny">尚無紀錄</div>'
+    const sig = lines.map((l) => l.text).join('\n')
+    if (sig !== lastBattleLogSig) {
+      lastBattleLogSig = sig
+      logEl.innerHTML =
+        lines.map((l) => `<div>${esc(l.text)}</div>`).join('') || '<div class="tiny">尚無紀錄</div>'
+    }
   }
 
   let toastEl = root.querySelector('.toast') as HTMLElement | null
@@ -110,7 +134,7 @@ function patchLiveHud(root: HTMLElement, s: GameState): void {
       toastEl.className = 'toast'
       root.querySelector('.game')?.appendChild(toastEl)
     }
-    toastEl.textContent = s.toast
+    setTextIfChanged(toastEl, s.toast)
     toastEl.style.display = 'block'
   } else if (toastEl) {
     toastEl.remove()
@@ -120,13 +144,15 @@ function patchLiveHud(root: HTMLElement, s: GameState): void {
 export function render(root: HTMLElement, kind: EmitKind = 'ui'): void {
   const s = getState()
 
-  // 掛機 tick：局部更新；編輯中或非 game 也避免拆樹
-  if (kind === 'tick' && s.screen === 'game' && s.player) {
-    const shell = root.querySelector('#spore-shell') as HTMLElement | null
-    if (shell?.querySelector('.game') && !isEditingField(root)) {
-      patchLiveHud(shell, s)
-      return
+  // 掛機 tick：只做局部更新；永遠不因 tick 走 innerHTML 全量重繪
+  if (kind === 'tick') {
+    if (s.screen === 'game' && s.player) {
+      const shell = root.querySelector('#spore-shell') as HTMLElement | null
+      if (shell?.querySelector('.game')) {
+        patchLiveHud(shell, s)
+      }
     }
+    return
   }
 
   const prevContent = root.querySelector('.content') as HTMLElement | null
@@ -138,6 +164,7 @@ export function render(root: HTMLElement, kind: EmitKind = 'ui'): void {
       ? { start: active.selectionStart, end: active.selectionEnd }
       : null
 
+  lastBattleLogSig = ''
   root.innerHTML = `<div class="shell" id="spore-shell"></div>`
   const shell = root.querySelector('#spore-shell') as HTMLElement
   paint(shell, s)

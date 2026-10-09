@@ -61,7 +61,8 @@ function toast(text: string): void {
   window.setTimeout(() => {
     if (state.toast === text) {
       state = { ...state, toast: null }
-      emit('ui')
+      // 遊戲中走 tick 局部更新，避免 toast 消失時全量 innerHTML 重繪閃爍
+      emit(state.screen === 'game' && state.player ? 'tick' : 'ui')
     }
   }, 1800)
 }
