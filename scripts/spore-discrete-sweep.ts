@@ -37,7 +37,7 @@ function classBarePower(level: number, classId: (typeof CLASSES)[number]['id']):
   p.level = level
   p.bag = []
   p.equips = {}
-  p.petId = null
+  p.petIds = []
   p.forgeLevel = 1
   return powerScore(p)
 }

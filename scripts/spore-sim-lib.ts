@@ -131,24 +131,17 @@ function levelUpLoop(player: Player): void {
 }
 
 function unlockPets(player: Player): void {
-  for (const pet of PETS) {
-    const forgeOk = player.forgeLevel >= (pet.unlockForge ?? 1)
-    if (
-      player.stage >= pet.unlockStage &&
-      forgeOk &&
-      !player.unlockedPets.includes(pet.id)
-    ) {
-      player.unlockedPets.push(pet.id)
-    }
-  }
+  // v2：寵物改走副本券召喚；模擬仍依戰力把已擁有寵物掛上
+  void player
 }
 
 function bestPetId(player: Player): string | null {
   let best: string | null = null
   let bestBonus = -1
-  for (const id of player.unlockedPets) {
-    const p = PET_MAP[id]
+  for (const owned of player.ownedPets ?? []) {
+    const p = PET_MAP[owned.id]
     if (!p) continue
+    const id = owned.id
     const bonus =
       (p.bonus.atk ?? 0) * 4 +
       (p.bonus.def ?? 0) * 3 +
@@ -229,7 +222,7 @@ function snapshot(player: Player, hours: number, counters: Counters, power: numb
     equippedSlots: nEq,
     avgEquipLevel: nEq ? +(avgEquipLevel / nEq).toFixed(2) : 0,
     bestRarity,
-    petId: player.petId,
+    petId: player.petIds?.[0] ?? null,
     clears: counters.clears,
     pulls: counters.pulls,
     forgeUpgrades: counters.forgeUpgrades,
@@ -269,8 +262,8 @@ function tryPull(player: Player, rng: Rng, counters: Counters, times = 1): void 
 
 function tryUpgradeForge(player: Player, counters: Counters): boolean {
   const cost = forgeUpgradeCost(player.forgeLevel)
-  if (player.hammer < cost.hammer || player.coin < cost.coin) return false
-  player.hammer -= cost.hammer
+  if (player.coin < cost.coin) return false
+  // v2：升爐只耗金；hammer 欄位保留兼容
   player.coin -= cost.coin
   player.forgeLevel += 1
   counters.forgeUpgrades += 1
@@ -476,13 +469,6 @@ function battleBatch(
       let oil = Math.floor((1 + Math.floor(player.forgeLevel / 3)) * rewardMult)
       player.xp += Math.floor(stage.xp * Math.max(0.5, rewardMult))
 
-      const pet = player.petId ? PET_MAP[player.petId] : null
-      const loot = pet?.lootBonus
-      if (loot && ratio >= 0.5) {
-        if (loot.hammerChance && rng.next() < loot.hammerChance) hammer += 1
-        if (loot.oilChance && rng.next() < loot.oilChance) oil += loot.oilExtra ?? 1
-      }
-
       player.hammer += hammer
       player.lampOil += oil
       player.stage += 1
@@ -509,7 +495,7 @@ export function runSim(config: SimConfig): SimResult {
     stalledTicks: 0,
   }
   const stallRatio = config.stallRatio ?? 0.85
-  const bagCap = config.bagCap ?? BAG_CAP
+  const bagCap = config.bagCap ?? 48
   const decideEvery = config.decideEvery ?? 8
   const autoPet = config.autoPet ?? true
 
@@ -543,8 +529,8 @@ export function runSim(config: SimConfig): SimResult {
     }
     if (autoPet) {
       const bp = bestPetId(player)
-      if (bp && bp !== player.petId) {
-        player.petId = bp
+      if (bp && !(player.petIds ?? []).includes(bp)) {
+        player.petIds = [bp]
         dirty = true
       }
     }

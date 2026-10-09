@@ -1,5 +1,5 @@
 import type { GameState, Player } from './types'
-import { SAVE_KEY, SAVE_VERSION } from './util'
+import { SAVE_KEY, SAVE_VERSION, migratePlayer } from './util'
 
 type Blob = {
   v: number
@@ -19,9 +19,10 @@ export function loadSave(): Blob | null {
   try {
     const raw = localStorage.getItem(SAVE_KEY)
     if (!raw) return null
-    const data = JSON.parse(raw) as Blob
-    if (!data?.player || data.v !== SAVE_VERSION) return null
-    return data
+    const data = JSON.parse(raw) as { v?: number; player?: Record<string, unknown> }
+    if (!data?.player) return null
+    const player = migratePlayer(data.player)
+    return { v: SAVE_VERSION, player, savedAt: Date.now() }
   } catch {
     return null
   }

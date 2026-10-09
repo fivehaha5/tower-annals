@@ -15,7 +15,15 @@ const ENEMIES = [
   '虛空先驅',
 ]
 
-/** 分段關卡倍率：前期爽感、中後期讓裝備／強化能追上 */
+/** 每章 10 關 → 顯示 label「章-節」 */
+export function stageLabel(n: number): string {
+  const i = Math.max(1, Math.floor(n))
+  const chapter = Math.floor((i - 1) / 10) + 1
+  const part = ((i - 1) % 10) + 1
+  return `${chapter}-${part}`
+}
+
+/** 分段關卡倍率：前期爽感、中後期讓裝備能追上 */
 export function stageScale(n: number): number {
   const i = Math.max(1, Math.floor(n))
   if (i <= 20) return Math.pow(1.12, i - 1)
@@ -30,7 +38,8 @@ export function stageOf(n: number): StageDef {
   const scale = stageScale(i)
   return {
     id: i,
-    name: `${i} 關 · ${enemy}`,
+    name: `${stageLabel(i)} · ${enemy}`,
+    label: stageLabel(i),
     enemy,
     hp: Math.floor(40 * scale),
     atk: Math.floor(6 * scale),
