@@ -10,6 +10,7 @@ function isImageAsset(url) {
     p.includes('/icons/') ||
     p.endsWith('/apple-touch-icon.jpg') ||
     p.endsWith('/favicon.svg') ||
+    p.endsWith('/favicon-spore.svg') ||
     p.endsWith('/icons.svg')
   )
 }

@@ -14,7 +14,7 @@ export const SLOT_LABEL: Record<Slot, string> = {
 export const RARITY_ORDER: Rarity[] = ['普通', '優秀', '精良', '史詩', '傳說', '神話']
 
 export const RARITY_COLOR: Record<Rarity, string> = {
-  普通: '#c5d0c4',
+  普通: '#9aa3a0',
   優秀: '#6bc46d',
   精良: '#5aa8ff',
   史詩: '#c07bff',
@@ -22,16 +22,35 @@ export const RARITY_COLOR: Record<Rarity, string> = {
   神話: '#ff6b8a',
 }
 
+/**
+ * 鍛造爐稀有權重：升爐後低階降至 0%（對齊 FM shot-03）。
+ * 索引 0 = 爐 Lv1；超出用最後一列。
+ */
 export const RARITY_WEIGHT_BY_FORGE: number[][] = [
-  // forgeLv 1: 普通偏多
-  [55, 30, 12, 3, 0, 0],
-  [45, 32, 16, 6, 1, 0],
-  [35, 32, 20, 10, 3, 0],
-  [25, 30, 24, 14, 6, 1],
-  [18, 26, 26, 18, 9, 3],
-  [12, 22, 26, 22, 12, 6],
-  [8, 18, 24, 24, 16, 10],
-  [5, 14, 22, 26, 20, 13],
+  // 1
+  [70, 30, 0, 0, 0, 0],
+  // 2
+  [50, 35, 15, 0, 0, 0],
+  // 3
+  [35, 35, 22, 8, 0, 0],
+  // 4
+  [20, 32, 28, 15, 5, 0],
+  // 5 — 普通開始被擠
+  [8, 28, 30, 22, 10, 2],
+  // 6 — 普通 → 0
+  [0, 22, 32, 26, 14, 6],
+  // 7
+  [0, 12, 30, 28, 20, 10],
+  // 8 — 優秀 → 0
+  [0, 0, 26, 32, 26, 16],
+  // 9
+  [0, 0, 16, 32, 30, 22],
+  // 10 — 精良開始降
+  [0, 0, 6, 30, 34, 30],
+  // 11 — 精良 → 0
+  [0, 0, 0, 28, 36, 36],
+  // 12+
+  [0, 0, 0, 18, 40, 42],
 ]
 
 const NAMES: Record<Slot, string[]> = {
@@ -85,3 +104,8 @@ function makeGear(): GearDef[] {
 
 export const GEAR: GearDef[] = makeGear()
 export const GEAR_MAP = Object.fromEntries(GEAR.map((g) => [g.id, g])) as Record<string, GearDef>
+
+export function rarityWeightsAt(forgeLevel: number): number[] {
+  const idx = Math.min(RARITY_WEIGHT_BY_FORGE.length - 1, Math.max(0, forgeLevel - 1))
+  return [...RARITY_WEIGHT_BY_FORGE[idx]]
+}
